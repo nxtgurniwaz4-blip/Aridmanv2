@@ -132,43 +132,32 @@ workflows:
             -userDefaults '-DontUseNewBuildSystem YES' \
             archive
 
-      - name: Verify built application
+      - name: Packaging Unsigned IPA File
         script: |
           set -e
 
           APP_DIR="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications"
-
-          echo "Archive contents:"
-          find "$APP_DIR" -maxdepth 2 -print
-
-          APP_PATH=$(find "$APP_DIR" \
-            -maxdepth 1 \
-            -type d \
-            -name "*.app" \
-            | head -n 1)
+          APP_PATH=$(find "$APP_DIR" -maxdepth 1 -type d -name "*.app" | head -n 1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app found."
+            echo "ERROR: No .app binary container discovered inside workspace."
             exit 1
           fi
 
-          echo "Application Path: $APP_PATH"
-          du -sh "$APP_PATH"
+          # Setting up target payload filesystem folder distribution framework
+          PAYLOAD_DIR="$CM_BUILD_DIR/build/Payload"
+          rm -rf "$PAYLOAD_DIR"
+          mkdir -p "$PAYLOAD_DIR"
 
-          echo "EXECUTABLES:"
-          find "$APP_PATH" \
-            -maxdepth 1 \
-            -type f \
-            -perm -111 \
-            -exec ls -lh {} \;
+          # Duplicating compiled app sandbox architecture assets inside the export block
+          cp -R "$APP_PATH" "$PAYLOAD_DIR/"
 
-          # Targeting clean build variables generated natively by Xcode compiler tasks
-          EXECUTABLE="${APP_PATH}/AridmansHappyPlace"
+          # Compressing the container directory into an unsigned IPA architecture archive format 
+          cd "$CM_BUILD_DIR/build"
+          zip -r "Aridaman_Unsigned.ipa" Payload
 
-          if [ ! -f "$EXECUTABLE" ]; then
-            echo "ERROR: Main executable not found."
-            exit 1
-          fi
+          echo "IPA structural packaging task completed successfully!"
+          ls -lh "Aridaman_Unsigned.ipa"
 
-          echo "MAIN EXECUTABLE SIZE:"
-          du -sh "$EXECUTABLE"
+    artifacts:
+      - build/*.ipa

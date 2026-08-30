@@ -6,72 +6,122 @@ workflows:
       xcode: latest
 
     scripts:
-      - name: Extract project ZIP
+
+      - name: Extract main ZIP
         script: |
           set -e
-
-          ZIP_FILE=$(find "$CM_BUILD_DIR" -maxdepth 1 -type f -iname "*.zip" | head -n 1)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "❌ No ZIP file found in repository root"
-            exit 1
-          fi
-
-          echo "📦 Found: $ZIP_FILE"
 
           rm -rf "$CM_BUILD_DIR/extracted_project"
           mkdir -p "$CM_BUILD_DIR/extracted_project"
 
+          ZIP_FILE=$(find "$CM_BUILD_DIR" \
+            -maxdepth 2 \
+            -type f \
+            -iname "*.zip" \
+            ! -path "*/extracted_project/*" \
+            | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ No ZIP file found"
+            exit 1
+          fi
+
+          echo "📦 ZIP: $ZIP_FILE"
+
           unzip -q "$ZIP_FILE" -d "$CM_BUILD_DIR/extracted_project"
 
-          echo "📂 Extracted contents:"
-          find "$CM_BUILD_DIR/extracted_project" -maxdepth 3 -print
+          echo ""
+          echo "📂 Extracted files:"
+          find "$CM_BUILD_DIR/extracted_project" -maxdepth 5 -print
 
-      - name: Locate Xcode project
+      - name: Find Xcode project
         script: |
           set -e
 
           PROJECT=$(find "$CM_BUILD_DIR/extracted_project" \
             -type d \
-            -name "AridmansHappyPlace.xcodeproj" \
+            -name "*.xcodeproj" \
             -print -quit)
 
           if [ -z "$PROJECT" ]; then
-            echo "❌ AridmansHappyPlace.xcodeproj not found"
+            echo "❌ No .xcodeproj found!"
+            echo ""
+            echo "Xcode projects found:"
+            find "$CM_BUILD_DIR/extracted_project" -name "*.xcodeproj" -print
             exit 1
           fi
 
+          PROJECT_NAME=$(basename "$PROJECT" .xcodeproj)
           PROJECT_DIR=$(dirname "$PROJECT")
 
-          echo "✅ Xcode project found:"
+          echo "✅ Xcode project:"
           echo "$PROJECT"
 
-          echo "PROJECT_DIR=$PROJECT_DIR" > "$CM_BUILD_DIR/project_path.env"
+          echo "PROJECT=$PROJECT" > "$CM_BUILD_DIR/project.env"
+          echo "PROJECT_NAME=$PROJECT_NAME" >> "$CM_BUILD_DIR/project.env"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$CM_BUILD_DIR/project.env"
 
       - name: Verify Xcode project
         script: |
           set -e
 
-          source "$CM_BUILD_DIR/project_path.env"
+          source "$CM_BUILD_DIR/project.env"
 
-          test -f "$PROJECT_DIR/AridmansHappyPlace.xcodeproj/project.pbxproj"
-          test -f "$PROJECT_DIR/AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme"
-          test -f "$PROJECT_DIR/AridmansHappyPlace/AridmansHappyPlaceApp.swift"
+          echo "🔍 Checking:"
+          echo "$PROJECT"
 
-          echo "✅ Project structure OK"
+          test -f "$PROJECT/project.pbxproj"
+
+          echo "✅ project.pbxproj found"
+
+          SCHEME=$(find "$PROJECT_DIR" \
+            -path "*/xcshareddata/xcschemes/*.xcscheme" \
+            -print -quit)
+
+          if [ -z "$SCHEME" ]; then
+            echo "❌ No shared Xcode scheme found"
+            echo ""
+            echo "Available schemes:"
+            find "$PROJECT_DIR" -name "*.xcscheme" -print
+            exit 1
+          fi
+
+          SCHEME_NAME=$(basename "$SCHEME" .xcscheme)
+
+          echo "✅ Scheme found:"
+          echo "$SCHEME_NAME"
+
+          echo "SCHEME_NAME=$SCHEME_NAME" >> "$CM_BUILD_DIR/project.env"
+
+          APP_SOURCE=$(find "$PROJECT_DIR" \
+            -type f \
+            -name "*App.swift" \
+            -print -quit)
+
+          if [ -z "$APP_SOURCE" ]; then
+            echo "⚠️ No *App.swift found."
+            echo "Continuing because the Xcode project itself is valid."
+          else
+            echo "✅ App source:"
+            echo "$APP_SOURCE"
+          fi
 
       - name: Build unsigned archive
         script: |
           set -e
 
-          source "$CM_BUILD_DIR/project_path.env"
+          source "$CM_BUILD_DIR/project.env"
 
           rm -rf "$CM_BUILD_DIR/build"
           mkdir -p "$CM_BUILD_DIR/build"
 
+          echo "🏗️ Building:"
+          echo "$PROJECT"
+          echo "Scheme: $SCHEME_NAME"
+
           xcodebuild \
-            -project "$PROJECT_DIR/AridmansHappyPlace.xcodeproj" \
-            -scheme "AridmansHappyPlace" \
+            -project "$PROJECT" \
+            -scheme "$SCHEME_NAME" \
             -configuration Release \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
@@ -87,19 +137,40 @@ workflows:
         script: |
           set -e
 
-          APP_PATH="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications/AridmansHappyPlace.app"
+          ARCHIVE="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
 
-          test -d "$APP_PATH"
+          APP_PATH=$(find "$ARCHIVE/Products/Applications" \
+            -maxdepth 1 \
+            -type d \
+            -name "*.app" \
+            -print -quit)
 
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No .app found in archive"
+            find "$ARCHIVE" -maxdepth 5 -print
+            exit 1
+          fi
+
+          echo "📱 App:"
+          echo "$APP_PATH"
+
+          rm -rf "$CM_BUILD_DIR/build/Payload"
           mkdir -p "$CM_BUILD_DIR/build/Payload"
+
           cp -R "$APP_PATH" "$CM_BUILD_DIR/build/Payload/"
 
           cd "$CM_BUILD_DIR/build"
-          zip -qr "AridmansHappyPlace-unsigned.ipa" Payload
 
-          echo "✅ IPA created:"
+          zip -qr \
+            "AridmansHappyPlace-unsigned.ipa" \
+            Payload
+
+          test -f "AridmansHappyPlace-unsigned.ipa"
+
+          echo ""
+          echo "🎉 UNSIGNED IPA CREATED"
           ls -lh "AridmansHappyPlace-unsigned.ipa"
 
     artifacts:
       - build/AridmansHappyPlace-unsigned.ipa
-      - build/AridmansHappyPlace.xcarchive/** 
+      - build/AridmansHappyPlace.xcarchive/**

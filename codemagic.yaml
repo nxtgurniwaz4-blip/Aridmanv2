@@ -19,7 +19,7 @@ workflows:
         script: |
           set -e
 
-          ZIP_FILE="AridmansHappyPlace-GitHub-ready 2.zip"
+          ZIP_FILE="AridmansHappyPlace-GitHub-ready 3.zip"
           TEMP_DIR="$CM_BUILD_DIR/extracted"
 
           rm -rf "$TEMP_DIR"

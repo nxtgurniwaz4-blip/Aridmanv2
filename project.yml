@@ -26,11 +26,14 @@ targets:
     sources:
       - path: AridmansHappyPlace
 
+    info:
+      path: AridmansHappyPlace/Info.plist
+
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aridman.happyplace
         PRODUCT_NAME: "Aridman's Happy Place"
-        INFOPLIST_FILE: AridmansHappyPlace/Info.plist
+        SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         CODE_SIGNING_ALLOWED: NO

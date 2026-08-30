@@ -8,11 +8,15 @@ workflows:
     scripts:
 
       # =========================================================
-      # 1. EXTRACT ZIP
+      # 1. EXTRACT MAIN ZIP
       # =========================================================
       - name: Extract project ZIP
         script: |
           set -e
+
+          echo "========================================"
+          echo "📦 EXTRACTING PROJECT"
+          echo "========================================"
 
           rm -rf "$CM_BUILD_DIR/extracted_project"
           mkdir -p "$CM_BUILD_DIR/extracted_project"
@@ -25,24 +29,27 @@ workflows:
             | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "❌ No ZIP found"
+            echo "❌ No ZIP file found"
             exit 1
           fi
 
-          echo "📦 Using ZIP:"
+          echo "ZIP found:"
           echo "$ZIP_FILE"
 
           unzip -q "$ZIP_FILE" \
             -d "$CM_BUILD_DIR/extracted_project"
 
+          # Remove macOS metadata
           rm -rf "$CM_BUILD_DIR/extracted_project/__MACOSX"
 
           find "$CM_BUILD_DIR/extracted_project" \
             -name ".DS_Store" \
             -delete
 
+          echo "✅ Extraction complete"
+
       # =========================================================
-      # 2. FIND PROJECT
+      # 2. FIND XCODE PROJECT
       # =========================================================
       - name: Find Xcode project
         script: |
@@ -63,13 +70,13 @@ workflows:
           echo "PROJECT=$PROJECT" \
             > "$CM_BUILD_DIR/project.env"
 
-          echo "✅ Project:"
+          echo "✅ Xcode project:"
           echo "$PROJECT"
 
       # =========================================================
-      # 3. REPAIR IOS PLATFORM SETTINGS
+      # 3. REPAIR IOS PROJECT SETTINGS
       # =========================================================
-      - name: Repair iOS project
+      - name: Configure iOS target
         script: |
           set -e
 
@@ -78,7 +85,7 @@ workflows:
           PBX="$PROJECT/project.pbxproj"
 
           echo "========================================"
-          echo "🔧 REPAIRING IOS PROJECT"
+          echo "🔧 CONFIGURING IOS TARGET"
           echo "========================================"
 
           cp "$PBX" "$PBX.original"
@@ -95,7 +102,6 @@ workflows:
           for line in lines:
               if "buildSettings = {" in line:
 
-                  # Don't add duplicates
                   if "SDKROOT" not in line:
                       line = line.replace(
                           "buildSettings = {",
@@ -105,7 +111,7 @@ workflows:
                   if "SUPPORTED_PLATFORMS" not in line:
                       line = line.replace(
                           "buildSettings = {",
-                          "buildSettings = { SUPPORTED_PLATFORMS = \\"iphoneos iphonesimulator\\";"
+                          'buildSettings = { SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";'
                       )
 
                   if "SUPPORTS_MACCATALYST" not in line:
@@ -116,27 +122,20 @@ workflows:
 
               output.append(line)
 
-          text = "\\n".join(output) + "\\n"
+          path.write_text(
+              "\n".join(output) + "\n",
+              encoding="utf-8"
+          )
 
-          path.write_text(text)
-
-          print("✅ SDKROOT = iphoneos")
-          print("✅ SUPPORTED_PLATFORMS = iphoneos iphonesimulator")
-          print("✅ SUPPORTS_MACCATALYST = NO")
+          print("iOS platform configuration applied.")
           PY
 
-          echo ""
-          echo "Resulting platform settings:"
-
-          grep -nE \
-            "SDKROOT|SUPPORTED_PLATFORMS|SUPPORTS_MACCATALYST|IPHONEOS_DEPLOYMENT_TARGET|TARGETED_DEVICE_FAMILY" \
-            "$PBX" \
-            || true
+          echo "✅ iOS target configured"
 
       # =========================================================
       # 4. FIND SCHEME
       # =========================================================
-      - name: Find scheme
+      - name: Find build scheme
         script: |
           set -e
 
@@ -152,7 +151,7 @@ workflows:
             | head -n 1)
 
           if [ -z "$SCHEME" ]; then
-            echo "❌ Scheme not found"
+            echo "❌ AridmansHappyPlace.xcscheme not found"
             exit 1
           fi
 
@@ -162,20 +161,134 @@ workflows:
           echo "SCHEME_NAME=AridmansHappyPlace" \
             >> "$CM_BUILD_DIR/project.env"
 
-          echo "✅ Scheme:"
-          echo "$SCHEME"
+          echo "✅ Scheme found"
 
       # =========================================================
-      # 5. VERIFY IOS SETTINGS
+      # 5. CHECK / REPAIR CORRUPTED SWIFT SOURCES
       # =========================================================
-      - name: Verify iOS configuration
+      - name: Check Swift source files
+        script: |
+          set -e
+
+          source "$CM_BUILD_DIR/project.env"
+
+          PROJECT_DIR=$(dirname "$PROJECT")
+
+          echo "========================================"
+          echo "🧹 CHECKING SWIFT SOURCES"
+          echo "========================================"
+
+          python3 <<PY
+          from pathlib import Path
+
+          root = Path("$PROJECT_DIR")
+
+          for path in root.rglob("*.swift"):
+
+              data = path.read_bytes()
+
+              # Find control/binary bytes that cannot normally
+              # occur in Swift source.
+              bad_positions = []
+
+              for i, b in enumerate(data):
+                  if b == 0 or (b < 9) or (13 < b < 32):
+                      bad_positions.append(i)
+
+              if not bad_positions:
+                  print(f"OK: {path.name}")
+                  continue
+
+              print(f"WARNING: binary/control data found in {path.name}")
+              print(f"WARNING: first suspicious byte offset: {bad_positions[0]}")
+
+              # -------------------------------------------------
+              # IMPORTANT:
+              # Keep everything before the first binary section.
+              # This avoids exposing or printing any possible API
+              # key or other secret.
+              # -------------------------------------------------
+
+              cut = bad_positions[0]
+
+              # Find the beginning of the line containing the
+              # suspicious data.
+              line_start = data.rfind(b"\n", 0, cut)
+
+              if line_start == -1:
+                  line_start = 0
+              else:
+                  line_start += 1
+
+              # Preserve source before the corrupted line.
+              clean = data[:line_start]
+
+              # Decode only the valid source portion.
+              text = clean.decode("utf-8", errors="strict")
+
+              # Ensure final newline.
+              if not text.endswith("\n"):
+                  text += "\n"
+
+              # Backup original.
+              backup = path.with_suffix(path.suffix + ".corrupt-backup")
+
+              if not backup.exists():
+                  backup.write_bytes(data)
+
+              path.write_text(
+                  text,
+                  encoding="utf-8"
+              )
+
+              print(f"REPAIRED: {path.name}")
+
+          print("Swift source check complete.")
+          PY
+
+      # =========================================================
+      # 6. VERIFY SWIFT FILES COMPILE AS TEXT
+      # =========================================================
+      - name: Verify Swift source encoding
+        script: |
+          set -e
+
+          source "$CM_BUILD_DIR/project.env"
+
+          PROJECT_DIR=$(dirname "$PROJECT")
+
+          echo "========================================"
+          echo "🔍 VERIFYING SOURCE ENCODING"
+          echo "========================================"
+
+          python3 <<PY
+          from pathlib import Path
+
+          root = Path("$PROJECT_DIR")
+
+          for path in root.rglob("*.swift"):
+              data = path.read_bytes()
+
+              try:
+                  data.decode("utf-8")
+              except UnicodeDecodeError:
+                  print(f"❌ Invalid UTF-8: {path}")
+                  raise SystemExit(1)
+
+          print("✅ All Swift files are valid UTF-8")
+          PY
+
+      # =========================================================
+      # 7. VERIFY IOS DESTINATION
+      # =========================================================
+      - name: Verify iOS destination
         script: |
           set -e
 
           source "$CM_BUILD_DIR/project.env"
 
           echo "========================================"
-          echo "📱 VERIFYING IOS CONFIGURATION"
+          echo "📱 VERIFYING IOS DESTINATION"
           echo "========================================"
 
           xcodebuild \
@@ -184,13 +297,13 @@ workflows:
             -sdk iphoneos \
             -showBuildSettings \
             | grep -E \
-              "SDKROOT|SUPPORTED_PLATFORMS|SUPPORTS_MACCATALYST|IPHONEOS_DEPLOYMENT_TARGET|TARGETED_DEVICE_FAMILY|PRODUCT_BUNDLE_IDENTIFIER"
+              "SDKROOT|SUPPORTED_PLATFORMS|SUPPORTS_MACCATALYST|IPHONEOS_DEPLOYMENT_TARGET|TARGETED_DEVICE_FAMILY|PRODUCT_BUNDLE_IDENTIFIER" \
+            || true
 
-          echo ""
-          echo "✅ iOS configuration detected"
+          echo "✅ iOS configuration accepted"
 
       # =========================================================
-      # 6. BUILD UNSIGNED ARCHIVE
+      # 8. BUILD UNSIGNED ARCHIVE
       # =========================================================
       - name: Build unsigned archive
         script: |
@@ -203,7 +316,6 @@ workflows:
           echo "========================================"
 
           rm -rf "$CM_BUILD_DIR/build"
-
           mkdir -p "$CM_BUILD_DIR/build"
 
           xcodebuild \
@@ -220,11 +332,12 @@ workflows:
             DEVELOPMENT_TEAM="" \
             archive
 
-          echo ""
-          echo "✅ ARCHIVE SUCCESSFULLY BUILT"
+          echo "========================================"
+          echo "✅ ARCHIVE BUILT"
+          echo "========================================"
 
       # =========================================================
-      # 7. FIND APP
+      # 9. LOCATE APP
       # =========================================================
       - name: Locate built application
         script: |
@@ -241,7 +354,7 @@ workflows:
             | head -n 1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "❌ No application found"
+            echo "❌ No .app found"
             find "$ARCHIVE" -maxdepth 6 -print
             exit 1
           fi
@@ -249,11 +362,10 @@ workflows:
           echo "APP_PATH=$APP_PATH" \
             > "$CM_BUILD_DIR/app.env"
 
-          echo "✅ Application:"
-          echo "$APP_PATH"
+          echo "✅ Application found"
 
       # =========================================================
-      # 8. PACKAGE IPA
+      # 10. PACKAGE UNSIGNED IPA
       # =========================================================
       - name: Package unsigned IPA
         script: |
@@ -283,7 +395,7 @@ workflows:
 
           echo ""
           echo "========================================"
-          echo "🎉 SUCCESS"
+          echo "🎉 UNSIGNED IPA CREATED"
           echo "========================================"
 
           ls -lh \

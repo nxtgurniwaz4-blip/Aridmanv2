@@ -103,7 +103,6 @@ workflows:
 
           cd "$CM_BUILD_DIR"
 
-          # Isolated clean list function to completely prevent Exit Status 64 errors
           xcodebuild -project "Aridaman's Happy Place.xcodeproj" -list
 
       - name: Build unsigned archive
@@ -115,7 +114,7 @@ workflows:
           rm -rf build
           mkdir -p build
 
-          # Direct space-separated user-defaults layout to securely prevent SwiftDriver build engine failures (Exit Status 65)
+          # Clean, modern syntax structure with all invalid custom userDefault flags removed
           xcodebuild \
             -project "Aridaman's Happy Place.xcodeproj" \
             -scheme "AridmansHappyPlace" \
@@ -128,8 +127,6 @@ workflows:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            -userDefaults DontUseNewBuildSystem YES \
             archive
 
       - name: Packaging Unsigned IPA File

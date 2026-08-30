@@ -4,7 +4,6 @@ workflows:
 
     environment:
       xcode: latest
-
       vars:
         XCODE_PROJECT: "AridmansHappyPlace.xcodeproj"
         SCHEME: "AridmansHappyPlace"
@@ -26,30 +25,47 @@ workflows:
           set -e
 
           ZIP_FILE="AridmansHappyPlace-GitHub-ready 2.zip"
+          TEMP_DIR="$CM_BUILD_DIR/extracted"
 
-          echo "Current repository:"
-          pwd
+          echo "Repository contents:"
           ls -la
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: ZIP not found: $ZIP_FILE"
+            echo "ERROR: ZIP file not found: $ZIP_FILE"
             exit 1
           fi
 
-          rm -rf "$CM_BUILD_DIR/extracted"
-          mkdir -p "$CM_BUILD_DIR/extracted"
+          rm -rf "$TEMP_DIR"
+          mkdir -p "$TEMP_DIR"
 
-          echo "Extracting $ZIP_FILE..."
-          unzip -o "$ZIP_FILE" -d "$CM_BUILD_DIR/extracted"
+          echo "Extracting ZIP..."
+          unzip -o "$ZIP_FILE" -d "$TEMP_DIR"
 
-          echo "Extracted files:"
-          find "$CM_BUILD_DIR/extracted" -maxdepth 4 -print
+          echo "Extracted structure:"
+          find "$TEMP_DIR" -maxdepth 5 -print
 
-          # Copy extracted contents into the build directory.
-          cp -R "$CM_BUILD_DIR/extracted/"* "$CM_BUILD_DIR/" || true
+          SOURCE_DIR=$(find "$TEMP_DIR" \
+            -type d \
+            -name "AridmansHappyPlace" \
+            ! -path "*/__MACOSX/*" \
+            | head -n 1)
 
-          echo "Build directory after extraction:"
-          find "$CM_BUILD_DIR" -maxdepth 3 -print
+          if [ -z "$SOURCE_DIR" ]; then
+            echo "ERROR: AridmansHappyPlace source directory was not found."
+            exit 1
+          fi
+
+          echo "Found source directory:"
+          echo "$SOURCE_DIR"
+
+          rm -rf "$CM_BUILD_DIR/AridmansHappyPlace"
+
+          cp -R \
+            "$SOURCE_DIR" \
+            "$CM_BUILD_DIR/AridmansHappyPlace"
+
+          echo "Final project structure:"
+          find "$CM_BUILD_DIR/AridmansHappyPlace" -maxdepth 2 -print
 
       - name: Verify project files
         script: |
@@ -57,23 +73,27 @@ workflows:
 
           cd "$CM_BUILD_DIR"
 
-          echo "Looking for project.yml..."
-          find . -name "project.yml" -print
+          echo "Current build directory:"
+          pwd
 
-          echo "Looking for AridmansHappyPlace source directory..."
-          find . -type d -name "AridmansHappyPlace" -print
+          echo "Looking for project.yml..."
+          ls -l project.yml
+
+          echo "Looking for AridmansHappyPlace..."
+          ls -ld AridmansHappyPlace
 
           if [ ! -f "project.yml" ]; then
-            echo "ERROR: project.yml was not found at build root."
+            echo "ERROR: project.yml was not found."
             exit 1
           fi
 
           if [ ! -d "AridmansHappyPlace" ]; then
             echo "ERROR: AridmansHappyPlace source directory was not found."
-            echo "Actual directories:"
-            find . -type d -maxdepth 4 -print
+            find "$CM_BUILD_DIR" -maxdepth 4 -type d -print
             exit 1
           fi
+
+          echo "Project files verified successfully."
 
       - name: Generate Xcode project
         script: |
@@ -89,6 +109,8 @@ workflows:
             echo "ERROR: Xcode project was not generated."
             exit 1
           fi
+
+          echo "Xcode project generated successfully."
 
       - name: Build unsigned archive
         script: |
@@ -112,29 +134,49 @@ workflows:
             DEVELOPMENT_TEAM="" \
             archive
 
-      - name: Package unsigned IPA
+      - name: Find built app
         script: |
           set -e
 
           ARCHIVE_PATH="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
-          APPLICATIONS_PATH="$ARCHIVE_PATH/Products/Applications"
 
-          echo "Applications in archive:"
-          find "$APPLICATIONS_PATH" -maxdepth 2 -print
+          echo "Applications inside archive:"
+          find "$ARCHIVE_PATH/Products/Applications" \
+            -maxdepth 2 \
+            -print
 
-          APP_PATH="$APPLICATIONS_PATH/Aridman's Happy Place.app"
+          APP_PATH=$(find \
+            "$ARCHIVE_PATH/Products/Applications" \
+            -maxdepth 1 \
+            -type d \
+            -name "*.app" \
+            | head -n 1)
 
-          if [ ! -d "$APP_PATH" ]; then
-            echo "ERROR: Built app not found."
-            find "$APPLICATIONS_PATH" -maxdepth 2 -print
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app was found in the archive."
             exit 1
           fi
+
+          echo "Built application:"
+          echo "$APP_PATH"
+
+          echo "$APP_PATH" > "$CM_BUILD_DIR/app_path.txt"
+
+      - name: Package unsigned IPA
+        script: |
+          set -e
+
+          APP_PATH=$(cat "$CM_BUILD_DIR/app_path.txt")
+
+          echo "Packaging:"
+          echo "$APP_PATH"
 
           rm -rf "$CM_BUILD_DIR/unsigned_ipa"
 
           mkdir -p "$CM_BUILD_DIR/unsigned_ipa/Payload"
 
-          cp -R "$APP_PATH" \
+          cp -R \
+            "$APP_PATH" \
             "$CM_BUILD_DIR/unsigned_ipa/Payload/"
 
           cd "$CM_BUILD_DIR/unsigned_ipa"
@@ -144,10 +186,10 @@ workflows:
             "$CM_BUILD_DIR/AridmansHappyPlace-unsigned.ipa" \
             Payload
 
-          echo "Unsigned IPA created:"
+          echo "IPA successfully created:"
           ls -lh "$CM_BUILD_DIR/AridmansHappyPlace-unsigned.ipa"
 
     artifacts:
-      - AridmansHappyPlace-unsigned.ipa
-      - build/AridmansHappyPlace.xcarchive
-      - AridmansHappyPlace.xcodeproj/project.pbxproj
+      - "AridmansHappyPlace-unsigned.ipa"
+      - "build/AridmansHappyPlace.xcarchive"
+      - "AridmansHappyPlace.xcodeproj/project.pbxproj"

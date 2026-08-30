@@ -24,7 +24,7 @@ targets:
     platform: iOS
 
     sources:
-      - path: AridamansHappyPlace
+      - path: AridmansHappyPlace
         excludes:
           - "*.plist"
 

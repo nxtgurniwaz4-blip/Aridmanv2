@@ -1,0 +1,62 @@
+workflows:
+  aridman-unsigned:
+    name: Aridman's Happy Place - Unsigned IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    environment:
+      xcode: latest
+
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          set -e
+          brew install xcodegen
+
+      - name: Generate Xcode project
+        script: |
+          set -e
+          xcodegen generate
+
+      - name: Build unsigned iPhone/iPad app
+        script: |
+          set -e
+
+          rm -rf build
+          mkdir -p build
+
+          xcodebuild \
+            -project AridmansHappyPlace.xcodeproj \
+            -scheme AridmansHappyPlace \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        script: |
+          set -e
+
+          APP_PATH="$(find build/DerivedData/Build/Products/Release-iphoneos \
+            -maxdepth 1 \
+            -name 'AridmansHappyPlace.app' \
+            -type d \
+            -print -quit)"
+
+          test -n "$APP_PATH"
+          test -d "$APP_PATH"
+
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/AridmansHappyPlace.app
+
+          cd build
+          /usr/bin/zip -qry AridmansHappyPlace-unsigned.ipa Payload
+
+    artifacts:
+      - build/AridmansHappyPlace-unsigned.ipa
+      - build/DerivedData/Build/Products/Release-iphoneos/AridmansHappyPlace.app
+      - /tmp/xcodebuild_logs/*.log

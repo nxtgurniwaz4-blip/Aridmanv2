@@ -1,6 +1,6 @@
 workflows:
-  ios_project_diagnostics:
-    name: Aridman's Happy Place - Xcode diagnostics
+  diagnose_aridmans_project:
+    name: Diagnose Aridman's Happy Place
 
     environment:
       xcode: latest
@@ -8,9 +8,9 @@ workflows:
     scripts:
 
       # =========================================================
-      # 1. Find and extract the main ZIP
+      # 1. FIND AND EXTRACT THE MAIN ZIP
       # =========================================================
-      - name: Extract main ZIP
+      - name: Extract project ZIP
         script: |
           set -e
 
@@ -30,12 +30,14 @@ workflows:
 
           if [ -z "$ZIP_FILE" ]; then
             echo "❌ No ZIP file found."
+
             echo ""
-            echo "ZIP files:"
+            echo "ZIP files found:"
             find "$CM_BUILD_DIR" \
               -type f \
               -iname "*.zip" \
               -print
+
             exit 1
           fi
 
@@ -45,7 +47,7 @@ workflows:
           unzip -q "$ZIP_FILE" \
             -d "$CM_BUILD_DIR/extracted_project"
 
-          # Remove macOS archive metadata
+          # Remove macOS ZIP metadata
           rm -rf "$CM_BUILD_DIR/extracted_project/__MACOSX"
 
           # Remove Finder metadata
@@ -63,7 +65,7 @@ workflows:
             -print
 
       # =========================================================
-      # 2. Find the real Xcode project
+      # 2. FIND REAL XCODE PROJECT
       # =========================================================
       - name: Find Xcode project
         script: |
@@ -75,16 +77,16 @@ workflows:
 
           PROJECT=$(find "$CM_BUILD_DIR/extracted_project" \
             -type d \
-            -name "*.xcodeproj" \
+            -name "AridmansHappyPlace.xcodeproj" \
             -not -path "*/__MACOSX/*" \
             -print \
             | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "❌ No .xcodeproj found."
+            echo "❌ AridmansHappyPlace.xcodeproj not found."
 
             echo ""
-            echo "Available projects:"
+            echo "Available Xcode projects:"
             find "$CM_BUILD_DIR/extracted_project" \
               -type d \
               -name "*.xcodeproj" \
@@ -93,26 +95,14 @@ workflows:
             exit 1
           fi
 
-          PROJECT_NAME=$(basename "$PROJECT" .xcodeproj)
-          PROJECT_DIR=$(dirname "$PROJECT")
-
           echo "✅ PROJECT:"
           echo "$PROJECT"
 
-          echo ""
-          echo "PROJECT NAME:"
-          echo "$PROJECT_NAME"
-
-          echo ""
-          echo "PROJECT DIRECTORY:"
-          echo "$PROJECT_DIR"
-
-          echo "PROJECT=$PROJECT" > "$CM_BUILD_DIR/project.env"
-          echo "PROJECT_NAME=$PROJECT_NAME" >> "$CM_BUILD_DIR/project.env"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$CM_BUILD_DIR/project.env"
+          echo "PROJECT=$PROJECT" \
+            > "$CM_BUILD_DIR/project.env"
 
       # =========================================================
-      # 3. Verify project file
+      # 3. VERIFY PROJECT FILE
       # =========================================================
       - name: Verify project file
         script: |
@@ -121,23 +111,22 @@ workflows:
           source "$CM_BUILD_DIR/project.env"
 
           echo "========================================"
-          echo "📄 VERIFYING PROJECT FILE"
+          echo "📄 VERIFYING PROJECT"
           echo "========================================"
 
           if [ ! -f "$PROJECT/project.pbxproj" ]; then
-            echo "❌ project.pbxproj not found:"
-            echo "$PROJECT/project.pbxproj"
+            echo "❌ project.pbxproj not found."
             exit 1
           fi
 
           echo "✅ project.pbxproj exists"
 
           echo ""
-          echo "Project file size:"
+          echo "Project size:"
           wc -c "$PROJECT/project.pbxproj"
 
       # =========================================================
-      # 4. List targets and schemes
+      # 4. XCODE LIST
       # =========================================================
       - name: List Xcode targets and schemes
         script: |
@@ -145,6 +134,7 @@ workflows:
 
           source "$CM_BUILD_DIR/project.env"
 
+          echo ""
           echo "========================================"
           echo "📋 XCODE TARGETS AND SCHEMES"
           echo "========================================"
@@ -154,9 +144,9 @@ workflows:
             -list
 
       # =========================================================
-      # 5. Inspect target/platform configuration
+      # 5. NATIVE TARGET INFORMATION
       # =========================================================
-      - name: Inspect Xcode project
+      - name: Inspect native targets
         script: |
           set -e
 
@@ -164,52 +154,146 @@ workflows:
 
           PBX="$PROJECT/project.pbxproj"
 
+          echo ""
           echo "========================================"
-          echo "🔎 PROJECT CONFIGURATION"
+          echo "🎯 NATIVE TARGETS"
           echo "========================================"
 
-          echo ""
-          echo "---- PRODUCT TYPES ----"
-
-          grep -nE \
-            'productType|productReference' \
-            "$PBX" \
-            || true
-
-          echo ""
-          echo "---- SDK SETTINGS ----"
-
-          grep -nE \
-            'SDKROOT|SUPPORTED_PLATFORMS|SUPPORTS_MACCATALYST|TARGETED_DEVICE_FAMILY' \
-            "$PBX" \
-            || true
-
-          echo ""
-          echo "---- PRODUCT SETTINGS ----"
-
-          grep -nE \
-            'PRODUCT_BUNDLE_IDENTIFIER|PRODUCT_NAME|INFOPLIST_FILE' \
-            "$PBX" \
-            || true
-
-          echo ""
-          echo "---- IOS REFERENCES ----"
-
-          grep -nEi \
-            'iphoneos|iphonesimulator|IPHONEOS|ios' \
-            "$PBX" \
-            || true
-
-          echo ""
-          echo "---- MACOS REFERENCES ----"
-
-          grep -nEi \
-            'macos|MACOSX|macosx' \
+          grep -n \
+            -B 8 \
+            -A 35 \
+            "PBXNativeTarget" \
             "$PBX" \
             || true
 
       # =========================================================
-      # 6. Inspect schemes
+      # 6. PRODUCT TYPES
+      # =========================================================
+      - name: Inspect product types
+        script: |
+          set -e
+
+          source "$CM_BUILD_DIR/project.env"
+
+          PBX="$PROJECT/project.pbxproj"
+
+          echo ""
+          echo "========================================"
+          echo "📱 PRODUCT TYPES"
+          echo "========================================"
+
+          grep -n \
+            "productType" \
+            "$PBX" \
+            || true
+
+      # =========================================================
+      # 7. PLATFORM SETTINGS
+      # =========================================================
+      - name: Inspect platform settings
+        script: |
+          set -e
+
+          source "$CM_BUILD_DIR/project.env"
+
+          PBX="$PROJECT/project.pbxproj"
+
+          echo ""
+          echo "========================================"
+          echo "⚙️ PLATFORM SETTINGS"
+          echo "========================================"
+
+          grep -nE \
+            "SDKROOT|SUPPORTED_PLATFORMS|TARGETED_DEVICE_FAMILY|SUPPORTS_MACCATALYST|IPHONEOS_DEPLOYMENT_TARGET|MACOSX_DEPLOYMENT_TARGET" \
+            "$PBX" \
+            || true
+
+      # =========================================================
+      # 8. PRODUCT / BUNDLE SETTINGS
+      # =========================================================
+      - name: Inspect product settings
+        script: |
+          set -e
+
+          source "$CM_BUILD_DIR/project.env"
+
+          PBX="$PROJECT/project.pbxproj"
+
+          echo ""
+          echo "========================================"
+          echo "📦 PRODUCT SETTINGS"
+          echo "========================================"
+
+          grep -nE \
+            "PRODUCT_NAME|PRODUCT_BUNDLE_IDENTIFIER|INFOPLIST_FILE|GENERATE_INFOPLIST_FILE" \
+            "$PBX" \
+            || true
+
+      # =========================================================
+      # 9. IOS REFERENCES
+      # =========================================================
+      - name: Inspect iOS references
+        script: |
+          set -e
+
+          source "$CM_BUILD_DIR/project.env"
+
+          PBX="$PROJECT/project.pbxproj"
+
+          echo ""
+          echo "========================================"
+          echo "🍎 IOS REFERENCES"
+          echo "========================================"
+
+          grep -nEi \
+            "iphoneos|iphonesimulator|IPHONEOS|ios" \
+            "$PBX" \
+            || true
+
+      # =========================================================
+      # 10. MACOS REFERENCES
+      # =========================================================
+      - name: Inspect macOS references
+        script: |
+          set -e
+
+          source "$CM_BUILD_DIR/project.env"
+
+          PBX="$PROJECT/project.pbxproj"
+
+          echo ""
+          echo "========================================"
+          echo "🖥️ MACOS REFERENCES"
+          echo "========================================"
+
+          grep -nEi \
+            "macos|MACOSX|macosx" \
+            "$PBX" \
+            || true
+
+      # =========================================================
+      # 11. FIND SCHEMES
+      # =========================================================
+      - name: Find schemes
+        script: |
+          set -e
+
+          source "$CM_BUILD_DIR/project.env"
+
+          PROJECT_DIR=$(dirname "$PROJECT")
+
+          echo ""
+          echo "========================================"
+          echo "📑 SCHEMES"
+          echo "========================================"
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -name "*.xcscheme" \
+            -print
+
+      # =========================================================
+      # 12. PRINT SCHEME CONTENT
       # =========================================================
       - name: Inspect schemes
         script: |
@@ -217,51 +301,49 @@ workflows:
 
           source "$CM_BUILD_DIR/project.env"
 
-          echo "========================================"
-          echo "📑 SCHEMES"
-          echo "========================================"
+          PROJECT_DIR=$(dirname "$PROJECT")
 
           echo ""
-          echo "All schemes:"
-          find "$PROJECT_DIR" \
+          echo "========================================"
+          echo "📜 SCHEME CONTENT"
+          echo "========================================"
+
+          SCHEMES=$(find "$PROJECT_DIR" \
             -type f \
             -name "*.xcscheme" \
-            -print
+            -print)
 
-          echo ""
-          echo "Shared schemes:"
-          find "$PROJECT" \
-            -type f \
-            -path "*/xcshareddata/xcschemes/*.xcscheme" \
-            -print
+          if [ -z "$SCHEMES" ]; then
+            echo "❌ No schemes found."
+            exit 1
+          fi
 
-          echo ""
-          echo "Scheme contents:"
-          
-          for SCHEME in $(find "$PROJECT_DIR" \
-            -type f \
-            -name "*.xcscheme" \
-            -print); do
+          while IFS= read -r SCHEME; do
 
             echo ""
             echo "----------------------------------------"
+            echo "SCHEME:"
             echo "$SCHEME"
             echo "----------------------------------------"
 
             cat "$SCHEME"
-          done
+
+          done <<< "$SCHEMES"
 
       # =========================================================
-      # 7. Inspect Swift sources
+      # 13. FIND SWIFT SOURCES
       # =========================================================
-      - name: Inspect Swift source files
+      - name: Find Swift source files
         script: |
           set -e
 
           source "$CM_BUILD_DIR/project.env"
 
+          PROJECT_DIR=$(dirname "$PROJECT")
+
+          echo ""
           echo "========================================"
-          echo "🧩 SWIFT SOURCES"
+          echo "🧩 SWIFT SOURCE FILES"
           echo "========================================"
 
           find "$PROJECT_DIR" \
@@ -271,7 +353,7 @@ workflows:
             -print
 
       # =========================================================
-      # 8. Inspect build settings
+      # 14. SHOW BUILD SETTINGS
       # =========================================================
       - name: Show build settings
         script: |
@@ -279,8 +361,9 @@ workflows:
 
           source "$CM_BUILD_DIR/project.env"
 
+          echo ""
           echo "========================================"
-          echo "⚙️ BUILD SETTINGS"
+          echo "⚙️ XCODE BUILD SETTINGS"
           echo "========================================"
 
           xcodebuild \
@@ -290,28 +373,28 @@ workflows:
             2>&1 || true
 
       # =========================================================
-      # 9. Do NOT build yet
+      # 15. DIAGNOSTIC COMPLETE
       # =========================================================
       - name: Diagnostic complete
         script: |
           echo ""
           echo "========================================"
-          echo "✅ DIAGNOSTICS COMPLETE"
+          echo "✅ DIAGNOSTIC COMPLETE"
           echo "========================================"
           echo ""
-          echo "No archive was attempted."
+          echo "The project was extracted and inspected."
           echo ""
-          echo "The Codemagic log above contains:"
+          echo "NO IPA BUILD WAS ATTEMPTED."
+          echo ""
+          echo "Look above for:"
           echo "• Xcode targets"
           echo "• schemes"
           echo "• product types"
-          echo "• SDK/platform settings"
+          echo "• SDK settings"
           echo "• iOS references"
           echo "• macOS references"
-          echo "• Swift source files"
-          echo ""
-          echo "Use this output to repair the project target."
-          
+          echo "• Swift files"
+          echo "• build settings"
+
     artifacts:
       - extracted_project/**/*.xcodeproj/project.pbxproj
-      

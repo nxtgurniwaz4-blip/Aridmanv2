@@ -8,52 +8,60 @@ workflows:
     scripts:
 
       # =========================================================
-      # 1. EXTRACT MAIN ZIP
+      # 1. EXTRACT THE MAIN ZIP
       # =========================================================
       - name: Extract project ZIP
         script: |
           set -e
 
           echo "========================================"
-          echo "📦 EXTRACTING PROJECT"
+          echo "📦 EXTRACTING PROJECT ZIP"
           echo "========================================"
 
           rm -rf "$CM_BUILD_DIR/extracted_project"
           mkdir -p "$CM_BUILD_DIR/extracted_project"
 
           ZIP_FILE=$(find "$CM_BUILD_DIR" \
-            -maxdepth 2 \
+            -maxdepth 3 \
             -type f \
             -iname "*.zip" \
             ! -path "*/extracted_project/*" \
             | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "❌ No ZIP file found"
+            echo "❌ No ZIP file found."
+            echo ""
+            echo "Files in build directory:"
+            find "$CM_BUILD_DIR" -maxdepth 3 -type f -print
             exit 1
           fi
 
-          echo "ZIP found:"
+          echo "✅ ZIP found:"
           echo "$ZIP_FILE"
 
           unzip -q "$ZIP_FILE" \
             -d "$CM_BUILD_DIR/extracted_project"
 
-          # Remove macOS metadata
+          # Remove macOS archive metadata
           rm -rf "$CM_BUILD_DIR/extracted_project/__MACOSX"
 
           find "$CM_BUILD_DIR/extracted_project" \
             -name ".DS_Store" \
             -delete
 
-          echo "✅ Extraction complete"
+          echo ""
+          echo "✅ Extraction complete."
 
       # =========================================================
-      # 2. FIND XCODE PROJECT
+      # 2. FIND THE REAL XCODE PROJECT
       # =========================================================
       - name: Find Xcode project
         script: |
           set -e
+
+          echo "========================================"
+          echo "🔎 FINDING XCODE PROJECT"
+          echo "========================================"
 
           PROJECT=$(find "$CM_BUILD_DIR/extracted_project" \
             -type d \
@@ -63,18 +71,31 @@ workflows:
             | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "❌ AridmansHappyPlace.xcodeproj not found"
+            echo "❌ AridmansHappyPlace.xcodeproj not found."
+
+            echo ""
+            echo "Available Xcode projects:"
+            find "$CM_BUILD_DIR/extracted_project" \
+              -type d \
+              -name "*.xcodeproj" \
+              -print
+
+            exit 1
+          fi
+
+          echo "✅ Xcode project:"
+          echo "$PROJECT"
+
+          if [ ! -f "$PROJECT/project.pbxproj" ]; then
+            echo "❌ project.pbxproj missing."
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" \
             > "$CM_BUILD_DIR/project.env"
 
-          echo "✅ Xcode project:"
-          echo "$PROJECT"
-
       # =========================================================
-      # 3. REPAIR IOS PROJECT SETTINGS
+      # 3. REPAIR IOS PROJECT CONFIGURATION
       # =========================================================
       - name: Configure iOS target
         script: |
@@ -94,12 +115,13 @@ workflows:
           from pathlib import Path
 
           path = Path("$PBX")
-          text = path.read_text()
+          text = path.read_text(encoding="utf-8")
 
           lines = text.splitlines()
           output = []
 
           for line in lines:
+
               if "buildSettings = {" in line:
 
                   if "SDKROOT" not in line:
@@ -127,280 +149,19 @@ workflows:
               encoding="utf-8"
           )
 
-          print("iOS platform configuration applied.")
+          print("✅ SDKROOT configured")
+          print("✅ iOS platforms configured")
+          print("✅ Mac Catalyst disabled")
           PY
 
-          echo "✅ iOS target configured"
+          echo ""
+          echo "Platform settings:"
+          grep -nE \
+            "SDKROOT|SUPPORTED_PLATFORMS|SUPPORTS_MACCATALYST|IPHONEOS_DEPLOYMENT_TARGET|TARGETED_DEVICE_FAMILY" \
+            "$PBX" \
+            || true
 
       # =========================================================
       # 4. FIND SCHEME
       # =========================================================
-      - name: Find build scheme
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PROJECT_DIR=$(dirname "$PROJECT")
-
-          SCHEME=$(find "$PROJECT_DIR" \
-            -type f \
-            -name "AridmansHappyPlace.xcscheme" \
-            -not -path "*/__MACOSX/*" \
-            -print \
-            | head -n 1)
-
-          if [ -z "$SCHEME" ]; then
-            echo "❌ AridmansHappyPlace.xcscheme not found"
-            exit 1
-          fi
-
-          echo "SCHEME=$SCHEME" \
-            >> "$CM_BUILD_DIR/project.env"
-
-          echo "SCHEME_NAME=AridmansHappyPlace" \
-            >> "$CM_BUILD_DIR/project.env"
-
-          echo "✅ Scheme found"
-
-      # =========================================================
-      # 5. CHECK / REPAIR CORRUPTED SWIFT SOURCES
-      # =========================================================
-      - name: Check Swift source files
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PROJECT_DIR=$(dirname "$PROJECT")
-
-          echo "========================================"
-          echo "🧹 CHECKING SWIFT SOURCES"
-          echo "========================================"
-
-          python3 <<PY
-          from pathlib import Path
-
-          root = Path("$PROJECT_DIR")
-
-          for path in root.rglob("*.swift"):
-
-              data = path.read_bytes()
-
-              # Find control/binary bytes that cannot normally
-              # occur in Swift source.
-              bad_positions = []
-
-              for i, b in enumerate(data):
-                  if b == 0 or (b < 9) or (13 < b < 32):
-                      bad_positions.append(i)
-
-              if not bad_positions:
-                  print(f"OK: {path.name}")
-                  continue
-
-              print(f"WARNING: binary/control data found in {path.name}")
-              print(f"WARNING: first suspicious byte offset: {bad_positions[0]}")
-
-              # -------------------------------------------------
-              # IMPORTANT:
-              # Keep everything before the first binary section.
-              # This avoids exposing or printing any possible API
-              # key or other secret.
-              # -------------------------------------------------
-
-              cut = bad_positions[0]
-
-              # Find the beginning of the line containing the
-              # suspicious data.
-              line_start = data.rfind(b"\n", 0, cut)
-
-              if line_start == -1:
-                  line_start = 0
-              else:
-                  line_start += 1
-
-              # Preserve source before the corrupted line.
-              clean = data[:line_start]
-
-              # Decode only the valid source portion.
-              text = clean.decode("utf-8", errors="strict")
-
-              # Ensure final newline.
-              if not text.endswith("\n"):
-                  text += "\n"
-
-              # Backup original.
-              backup = path.with_suffix(path.suffix + ".corrupt-backup")
-
-              if not backup.exists():
-                  backup.write_bytes(data)
-
-              path.write_text(
-                  text,
-                  encoding="utf-8"
-              )
-
-              print(f"REPAIRED: {path.name}")
-
-          print("Swift source check complete.")
-          PY
-
-      # =========================================================
-      # 6. VERIFY SWIFT FILES COMPILE AS TEXT
-      # =========================================================
-      - name: Verify Swift source encoding
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PROJECT_DIR=$(dirname "$PROJECT")
-
-          echo "========================================"
-          echo "🔍 VERIFYING SOURCE ENCODING"
-          echo "========================================"
-
-          python3 <<PY
-          from pathlib import Path
-
-          root = Path("$PROJECT_DIR")
-
-          for path in root.rglob("*.swift"):
-              data = path.read_bytes()
-
-              try:
-                  data.decode("utf-8")
-              except UnicodeDecodeError:
-                  print(f"❌ Invalid UTF-8: {path}")
-                  raise SystemExit(1)
-
-          print("✅ All Swift files are valid UTF-8")
-          PY
-
-      # =========================================================
-      # 7. VERIFY IOS DESTINATION
-      # =========================================================
-      - name: Verify iOS destination
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          echo "========================================"
-          echo "📱 VERIFYING IOS DESTINATION"
-          echo "========================================"
-
-          xcodebuild \
-            -project "$PROJECT" \
-            -scheme "$SCHEME_NAME" \
-            -sdk iphoneos \
-            -showBuildSettings \
-            | grep -E \
-              "SDKROOT|SUPPORTED_PLATFORMS|SUPPORTS_MACCATALYST|IPHONEOS_DEPLOYMENT_TARGET|TARGETED_DEVICE_FAMILY|PRODUCT_BUNDLE_IDENTIFIER" \
-            || true
-
-          echo "✅ iOS configuration accepted"
-
-      # =========================================================
-      # 8. BUILD UNSIGNED ARCHIVE
-      # =========================================================
-      - name: Build unsigned archive
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          echo "========================================"
-          echo "🏗️ BUILDING UNSIGNED IOS ARCHIVE"
-          echo "========================================"
-
-          rm -rf "$CM_BUILD_DIR/build"
-          mkdir -p "$CM_BUILD_DIR/build"
-
-          xcodebuild \
-            -project "$PROJECT" \
-            -scheme "$SCHEME_NAME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination "generic/platform=iOS" \
-            -archivePath "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            archive
-
-          echo "========================================"
-          echo "✅ ARCHIVE BUILT"
-          echo "========================================"
-
-      # =========================================================
-      # 9. LOCATE APP
-      # =========================================================
-      - name: Locate built application
-        script: |
-          set -e
-
-          ARCHIVE="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
-
-          APP_PATH=$(find \
-            "$ARCHIVE/Products/Applications" \
-            -maxdepth 1 \
-            -type d \
-            -name "*.app" \
-            -print \
-            | head -n 1)
-
-          if [ -z "$APP_PATH" ]; then
-            echo "❌ No .app found"
-            find "$ARCHIVE" -maxdepth 6 -print
-            exit 1
-          fi
-
-          echo "APP_PATH=$APP_PATH" \
-            > "$CM_BUILD_DIR/app.env"
-
-          echo "✅ Application found"
-
-      # =========================================================
-      # 10. PACKAGE UNSIGNED IPA
-      # =========================================================
-      - name: Package unsigned IPA
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/app.env"
-
-          echo "========================================"
-          echo "📦 PACKAGING UNSIGNED IPA"
-          echo "========================================"
-
-          rm -rf "$CM_BUILD_DIR/build/Payload"
-
-          mkdir -p "$CM_BUILD_DIR/build/Payload"
-
-          cp -R "$APP_PATH" \
-            "$CM_BUILD_DIR/build/Payload/"
-
-          cd "$CM_BUILD_DIR/build"
-
-          zip -qr \
-            "AridmansHappyPlace-unsigned.ipa" \
-            Payload
-
-          test -f \
-            "AridmansHappyPlace-unsigned.ipa"
-
-          echo ""
-          echo "========================================"
-          echo "🎉 UNSIGNED IPA CREATED"
-          echo "========================================"
-
-          ls -lh \
-            "AridmansHappyPlace-unsigned.ipa"
-
-    artifacts:
-      - build/AridmansHappyPlace-unsigned.ipa
-      - build/AridmansHappyPlace.xcarchive/**
+      - name: Find

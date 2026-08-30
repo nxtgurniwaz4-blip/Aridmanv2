@@ -106,7 +106,7 @@ workflows:
           # Removed any complex experimental system parameter options causing Exit 64
           xcodebuild -project "Aridaman's Happy Place.xcodeproj" -list
 
-      - name: Build unsigned archive
+            - name: Build unsigned archive
         script: |
           set -e
 
@@ -115,7 +115,6 @@ workflows:
           rm -rf build
           mkdir -p build
 
-          # Clean parameters specifically designed to build an unsigned .xcarchive file wrapper
           xcodebuild \
             -project "Aridaman's Happy Place.xcodeproj" \
             -scheme "AridmansHappyPlace" \
@@ -128,7 +127,10 @@ workflows:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            -userDefaults -DontUseNewBuildSystem=YES \
             archive
+
 
       - name: Packaging Unsigned IPA File
         script: |

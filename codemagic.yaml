@@ -103,11 +103,10 @@ workflows:
 
           cd "$CM_BUILD_DIR"
 
-          xcodebuild \
-            -project "Aridaman's Happy Place.xcodeproj" \
-            -list
+          # Removed any complex experimental system parameter options causing Exit 64
+          xcodebuild -project "Aridaman's Happy Place.xcodeproj" -list
 
-            - name: Build unsigned archive
+      - name: Build unsigned archive
         script: |
           set -e
 
@@ -116,6 +115,7 @@ workflows:
           rm -rf build
           mkdir -p build
 
+          # Clean parameters specifically designed to build an unsigned .xcarchive file wrapper
           xcodebuild \
             -project "Aridaman's Happy Place.xcodeproj" \
             -scheme "AridmansHappyPlace" \
@@ -128,10 +128,7 @@ workflows:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            -userDefaults -DontUseNewBuildSystem=YES \
             archive
-
 
       - name: Packaging Unsigned IPA File
         script: |
@@ -145,15 +142,12 @@ workflows:
             exit 1
           fi
 
-          # Setting up target payload filesystem folder distribution framework
           PAYLOAD_DIR="$CM_BUILD_DIR/build/Payload"
           rm -rf "$PAYLOAD_DIR"
           mkdir -p "$PAYLOAD_DIR"
 
-          # Duplicating compiled app sandbox architecture assets inside the export block
           cp -R "$APP_PATH" "$PAYLOAD_DIR/"
 
-          # Compressing the container directory into an unsigned IPA architecture archive format 
           cd "$CM_BUILD_DIR/build"
           zip -r "Aridaman_Unsigned.ipa" Payload
 

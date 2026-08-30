@@ -1,6 +1,6 @@
 workflows:
-  diagnose_aridmans_project:
-    name: Diagnose Aridman's Happy Place
+  ios_unsigned_ipa:
+    name: Aridman's Happy Place - unsigned IPA
 
     environment:
       xcode: latest
@@ -8,15 +8,11 @@ workflows:
     scripts:
 
       # =========================================================
-      # 1. FIND AND EXTRACT THE MAIN ZIP
+      # 1. EXTRACT ZIP
       # =========================================================
       - name: Extract project ZIP
         script: |
           set -e
-
-          echo "========================================"
-          echo "📦 FINDING PROJECT ZIP"
-          echo "========================================"
 
           rm -rf "$CM_BUILD_DIR/extracted_project"
           mkdir -p "$CM_BUILD_DIR/extracted_project"
@@ -29,51 +25,28 @@ workflows:
             | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "❌ No ZIP file found."
-
-            echo ""
-            echo "ZIP files found:"
-            find "$CM_BUILD_DIR" \
-              -type f \
-              -iname "*.zip" \
-              -print
-
+            echo "❌ No ZIP found"
             exit 1
           fi
 
-          echo "✅ ZIP:"
+          echo "📦 Using ZIP:"
           echo "$ZIP_FILE"
 
           unzip -q "$ZIP_FILE" \
             -d "$CM_BUILD_DIR/extracted_project"
 
-          # Remove macOS ZIP metadata
           rm -rf "$CM_BUILD_DIR/extracted_project/__MACOSX"
 
-          # Remove Finder metadata
           find "$CM_BUILD_DIR/extracted_project" \
             -name ".DS_Store" \
             -delete
 
-          echo ""
-          echo "========================================"
-          echo "📂 EXTRACTED CONTENTS"
-          echo "========================================"
-
-          find "$CM_BUILD_DIR/extracted_project" \
-            -maxdepth 6 \
-            -print
-
       # =========================================================
-      # 2. FIND REAL XCODE PROJECT
+      # 2. FIND PROJECT
       # =========================================================
       - name: Find Xcode project
         script: |
           set -e
-
-          echo "========================================"
-          echo "🔎 FINDING XCODE PROJECT"
-          echo "========================================"
 
           PROJECT=$(find "$CM_BUILD_DIR/extracted_project" \
             -type d \
@@ -83,70 +56,20 @@ workflows:
             | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "❌ AridmansHappyPlace.xcodeproj not found."
-
-            echo ""
-            echo "Available Xcode projects:"
-            find "$CM_BUILD_DIR/extracted_project" \
-              -type d \
-              -name "*.xcodeproj" \
-              -print
-
+            echo "❌ AridmansHappyPlace.xcodeproj not found"
             exit 1
           fi
-
-          echo "✅ PROJECT:"
-          echo "$PROJECT"
 
           echo "PROJECT=$PROJECT" \
             > "$CM_BUILD_DIR/project.env"
 
-      # =========================================================
-      # 3. VERIFY PROJECT FILE
-      # =========================================================
-      - name: Verify project file
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          echo "========================================"
-          echo "📄 VERIFYING PROJECT"
-          echo "========================================"
-
-          if [ ! -f "$PROJECT/project.pbxproj" ]; then
-            echo "❌ project.pbxproj not found."
-            exit 1
-          fi
-
-          echo "✅ project.pbxproj exists"
-
-          echo ""
-          echo "Project size:"
-          wc -c "$PROJECT/project.pbxproj"
+          echo "✅ Project:"
+          echo "$PROJECT"
 
       # =========================================================
-      # 4. XCODE LIST
+      # 3. REPAIR IOS PLATFORM SETTINGS
       # =========================================================
-      - name: List Xcode targets and schemes
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          echo ""
-          echo "========================================"
-          echo "📋 XCODE TARGETS AND SCHEMES"
-          echo "========================================"
-
-          xcodebuild \
-            -project "$PROJECT" \
-            -list
-
-      # =========================================================
-      # 5. NATIVE TARGET INFORMATION
-      # =========================================================
-      - name: Inspect native targets
+      - name: Repair iOS project
         script: |
           set -e
 
@@ -154,127 +77,66 @@ workflows:
 
           PBX="$PROJECT/project.pbxproj"
 
+          echo "========================================"
+          echo "🔧 REPAIRING IOS PROJECT"
+          echo "========================================"
+
+          cp "$PBX" "$PBX.original"
+
+          python3 <<PY
+          from pathlib import Path
+
+          path = Path("$PBX")
+          text = path.read_text()
+
+          lines = text.splitlines()
+          output = []
+
+          for line in lines:
+              if "buildSettings = {" in line:
+
+                  # Don't add duplicates
+                  if "SDKROOT" not in line:
+                      line = line.replace(
+                          "buildSettings = {",
+                          "buildSettings = { SDKROOT = iphoneos;"
+                      )
+
+                  if "SUPPORTED_PLATFORMS" not in line:
+                      line = line.replace(
+                          "buildSettings = {",
+                          "buildSettings = { SUPPORTED_PLATFORMS = \\"iphoneos iphonesimulator\\";"
+                      )
+
+                  if "SUPPORTS_MACCATALYST" not in line:
+                      line = line.replace(
+                          "buildSettings = {",
+                          "buildSettings = { SUPPORTS_MACCATALYST = NO;"
+                      )
+
+              output.append(line)
+
+          text = "\\n".join(output) + "\\n"
+
+          path.write_text(text)
+
+          print("✅ SDKROOT = iphoneos")
+          print("✅ SUPPORTED_PLATFORMS = iphoneos iphonesimulator")
+          print("✅ SUPPORTS_MACCATALYST = NO")
+          PY
+
           echo ""
-          echo "========================================"
-          echo "🎯 NATIVE TARGETS"
-          echo "========================================"
-
-          grep -n \
-            -B 8 \
-            -A 35 \
-            "PBXNativeTarget" \
-            "$PBX" \
-            || true
-
-      # =========================================================
-      # 6. PRODUCT TYPES
-      # =========================================================
-      - name: Inspect product types
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PBX="$PROJECT/project.pbxproj"
-
-          echo ""
-          echo "========================================"
-          echo "📱 PRODUCT TYPES"
-          echo "========================================"
-
-          grep -n \
-            "productType" \
-            "$PBX" \
-            || true
-
-      # =========================================================
-      # 7. PLATFORM SETTINGS
-      # =========================================================
-      - name: Inspect platform settings
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PBX="$PROJECT/project.pbxproj"
-
-          echo ""
-          echo "========================================"
-          echo "⚙️ PLATFORM SETTINGS"
-          echo "========================================"
+          echo "Resulting platform settings:"
 
           grep -nE \
-            "SDKROOT|SUPPORTED_PLATFORMS|TARGETED_DEVICE_FAMILY|SUPPORTS_MACCATALYST|IPHONEOS_DEPLOYMENT_TARGET|MACOSX_DEPLOYMENT_TARGET" \
+            "SDKROOT|SUPPORTED_PLATFORMS|SUPPORTS_MACCATALYST|IPHONEOS_DEPLOYMENT_TARGET|TARGETED_DEVICE_FAMILY" \
             "$PBX" \
             || true
 
       # =========================================================
-      # 8. PRODUCT / BUNDLE SETTINGS
+      # 4. FIND SCHEME
       # =========================================================
-      - name: Inspect product settings
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PBX="$PROJECT/project.pbxproj"
-
-          echo ""
-          echo "========================================"
-          echo "📦 PRODUCT SETTINGS"
-          echo "========================================"
-
-          grep -nE \
-            "PRODUCT_NAME|PRODUCT_BUNDLE_IDENTIFIER|INFOPLIST_FILE|GENERATE_INFOPLIST_FILE" \
-            "$PBX" \
-            || true
-
-      # =========================================================
-      # 9. IOS REFERENCES
-      # =========================================================
-      - name: Inspect iOS references
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PBX="$PROJECT/project.pbxproj"
-
-          echo ""
-          echo "========================================"
-          echo "🍎 IOS REFERENCES"
-          echo "========================================"
-
-          grep -nEi \
-            "iphoneos|iphonesimulator|IPHONEOS|ios" \
-            "$PBX" \
-            || true
-
-      # =========================================================
-      # 10. MACOS REFERENCES
-      # =========================================================
-      - name: Inspect macOS references
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PBX="$PROJECT/project.pbxproj"
-
-          echo ""
-          echo "========================================"
-          echo "🖥️ MACOS REFERENCES"
-          echo "========================================"
-
-          grep -nEi \
-            "macos|MACOSX|macosx" \
-            "$PBX" \
-            || true
-
-      # =========================================================
-      # 11. FIND SCHEMES
-      # =========================================================
-      - name: Find schemes
+      - name: Find scheme
         script: |
           set -e
 
@@ -282,119 +144,151 @@ workflows:
 
           PROJECT_DIR=$(dirname "$PROJECT")
 
-          echo ""
-          echo "========================================"
-          echo "📑 SCHEMES"
-          echo "========================================"
-
-          find "$PROJECT_DIR" \
+          SCHEME=$(find "$PROJECT_DIR" \
             -type f \
-            -name "*.xcscheme" \
-            -print
-
-      # =========================================================
-      # 12. PRINT SCHEME CONTENT
-      # =========================================================
-      - name: Inspect schemes
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PROJECT_DIR=$(dirname "$PROJECT")
-
-          echo ""
-          echo "========================================"
-          echo "📜 SCHEME CONTENT"
-          echo "========================================"
-
-          SCHEMES=$(find "$PROJECT_DIR" \
-            -type f \
-            -name "*.xcscheme" \
-            -print)
-
-          if [ -z "$SCHEMES" ]; then
-            echo "❌ No schemes found."
-            exit 1
-          fi
-
-          while IFS= read -r SCHEME; do
-
-            echo ""
-            echo "----------------------------------------"
-            echo "SCHEME:"
-            echo "$SCHEME"
-            echo "----------------------------------------"
-
-            cat "$SCHEME"
-
-          done <<< "$SCHEMES"
-
-      # =========================================================
-      # 13. FIND SWIFT SOURCES
-      # =========================================================
-      - name: Find Swift source files
-        script: |
-          set -e
-
-          source "$CM_BUILD_DIR/project.env"
-
-          PROJECT_DIR=$(dirname "$PROJECT")
-
-          echo ""
-          echo "========================================"
-          echo "🧩 SWIFT SOURCE FILES"
-          echo "========================================"
-
-          find "$PROJECT_DIR" \
-            -type f \
-            -name "*.swift" \
+            -name "AridmansHappyPlace.xcscheme" \
             -not -path "*/__MACOSX/*" \
-            -print
+            -print \
+            | head -n 1)
+
+          if [ -z "$SCHEME" ]; then
+            echo "❌ Scheme not found"
+            exit 1
+          fi
+
+          echo "SCHEME=$SCHEME" \
+            >> "$CM_BUILD_DIR/project.env"
+
+          echo "SCHEME_NAME=AridmansHappyPlace" \
+            >> "$CM_BUILD_DIR/project.env"
+
+          echo "✅ Scheme:"
+          echo "$SCHEME"
 
       # =========================================================
-      # 14. SHOW BUILD SETTINGS
+      # 5. VERIFY IOS SETTINGS
       # =========================================================
-      - name: Show build settings
+      - name: Verify iOS configuration
         script: |
           set -e
 
           source "$CM_BUILD_DIR/project.env"
 
-          echo ""
           echo "========================================"
-          echo "⚙️ XCODE BUILD SETTINGS"
+          echo "📱 VERIFYING IOS CONFIGURATION"
           echo "========================================"
 
           xcodebuild \
             -project "$PROJECT" \
-            -scheme "AridmansHappyPlace" \
+            -scheme "$SCHEME_NAME" \
+            -sdk iphoneos \
             -showBuildSettings \
-            2>&1 || true
+            | grep -E \
+              "SDKROOT|SUPPORTED_PLATFORMS|SUPPORTS_MACCATALYST|IPHONEOS_DEPLOYMENT_TARGET|TARGETED_DEVICE_FAMILY|PRODUCT_BUNDLE_IDENTIFIER"
+
+          echo ""
+          echo "✅ iOS configuration detected"
 
       # =========================================================
-      # 15. DIAGNOSTIC COMPLETE
+      # 6. BUILD UNSIGNED ARCHIVE
       # =========================================================
-      - name: Diagnostic complete
+      - name: Build unsigned archive
         script: |
+          set -e
+
+          source "$CM_BUILD_DIR/project.env"
+
+          echo "========================================"
+          echo "🏗️ BUILDING UNSIGNED IOS ARCHIVE"
+          echo "========================================"
+
+          rm -rf "$CM_BUILD_DIR/build"
+
+          mkdir -p "$CM_BUILD_DIR/build"
+
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME_NAME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            archive
+
+          echo ""
+          echo "✅ ARCHIVE SUCCESSFULLY BUILT"
+
+      # =========================================================
+      # 7. FIND APP
+      # =========================================================
+      - name: Locate built application
+        script: |
+          set -e
+
+          ARCHIVE="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
+
+          APP_PATH=$(find \
+            "$ARCHIVE/Products/Applications" \
+            -maxdepth 1 \
+            -type d \
+            -name "*.app" \
+            -print \
+            | head -n 1)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No application found"
+            find "$ARCHIVE" -maxdepth 6 -print
+            exit 1
+          fi
+
+          echo "APP_PATH=$APP_PATH" \
+            > "$CM_BUILD_DIR/app.env"
+
+          echo "✅ Application:"
+          echo "$APP_PATH"
+
+      # =========================================================
+      # 8. PACKAGE IPA
+      # =========================================================
+      - name: Package unsigned IPA
+        script: |
+          set -e
+
+          source "$CM_BUILD_DIR/app.env"
+
+          echo "========================================"
+          echo "📦 PACKAGING UNSIGNED IPA"
+          echo "========================================"
+
+          rm -rf "$CM_BUILD_DIR/build/Payload"
+
+          mkdir -p "$CM_BUILD_DIR/build/Payload"
+
+          cp -R "$APP_PATH" \
+            "$CM_BUILD_DIR/build/Payload/"
+
+          cd "$CM_BUILD_DIR/build"
+
+          zip -qr \
+            "AridmansHappyPlace-unsigned.ipa" \
+            Payload
+
+          test -f \
+            "AridmansHappyPlace-unsigned.ipa"
+
           echo ""
           echo "========================================"
-          echo "✅ DIAGNOSTIC COMPLETE"
+          echo "🎉 SUCCESS"
           echo "========================================"
-          echo ""
-          echo "The project was extracted and inspected."
-          echo ""
-          echo "NO IPA BUILD WAS ATTEMPTED."
-          echo ""
-          echo "Look above for:"
-          echo "• Xcode targets"
-          echo "• schemes"
-          echo "• product types"
-          echo "• SDK settings"
-          echo "• iOS references"
-          echo "• macOS references"
-          echo "• Swift files"
-          echo "• build settings"
+
+          ls -lh \
+            "AridmansHappyPlace-unsigned.ipa"
 
     artifacts:
-      - extracted_project/**/*.xcodeproj/project.pbxproj
+      - build/AridmansHappyPlace-unsigned.ipa
+      - build/AridmansHappyPlace.xcarchive/**

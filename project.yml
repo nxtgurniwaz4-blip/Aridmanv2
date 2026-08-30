@@ -1,0 +1,37 @@
+name: AridmansHappyPlace
+
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.aridman.happyplace
+    PRODUCT_NAME: "Aridman's Happy Place"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    SUPPORTS_MACCATALYST: NO
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGN_IDENTITY: ""
+    DEVELOPMENT_TEAM: ""
+    INFOPLIST_FILE: AridmansHappyPlace/Info.plist
+
+targets:
+  AridmansHappyPlace:
+    type: application
+    platform: iOS
+    sources:
+      - path: AridmansHappyPlace
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aridman.happyplace
+        PRODUCT_NAME: "Aridman's Happy Place"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+        DEVELOPMENT_TEAM: ""

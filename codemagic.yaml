@@ -1,0 +1,53 @@
+workflows:
+  ios_unsigned_ipa:
+    name: Aridman's Happy Place - unsigned IPA
+    environment:
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "AridmansHappyPlace.xcodeproj"
+        SCHEME: "AridmansHappyPlace"
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+      - name: Generate Xcode project
+        script: |
+          xcodegen generate --spec project.yml
+      - name: Build unsigned archive
+        script: |
+          set -e
+          rm -rf build
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            archive
+      - name: Package unsigned IPA
+        script: |
+          set -e
+          APP_PATH="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications/Aridman's Happy Place.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Built app not found:"
+            find "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications" -maxdepth 2 -print
+            exit 1
+          fi
+
+          rm -rf "$CM_BUILD_DIR/unsigned_ipa"
+          mkdir -p "$CM_BUILD_DIR/unsigned_ipa/Payload"
+          cp -R "$APP_PATH" "$CM_BUILD_DIR/unsigned_ipa/Payload/"
+
+          cd "$CM_BUILD_DIR/unsigned_ipa"
+          /usr/bin/zip -qry "$CM_BUILD_DIR/AridmansHappyPlace-unsigned.ipa" Payload
+    artifacts:
+      - AridmansHappyPlace-unsigned.ipa
+      - build/AridmansHappyPlace.xcarchive
+      - AridmansHappyPlace.xcodeproj/project.pbxproj

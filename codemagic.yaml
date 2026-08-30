@@ -1,23 +1,76 @@
 workflows:
   ios_unsigned_ipa:
     name: Aridman's Happy Place - unsigned IPA
+
     environment:
       xcode: latest
+
     scripts:
+      - name: Extract project ZIP
+        script: |
+          set -e
+
+          ZIP_FILE=$(find "$CM_BUILD_DIR" -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ No ZIP file found in repository root"
+            exit 1
+          fi
+
+          echo "📦 Found: $ZIP_FILE"
+
+          rm -rf "$CM_BUILD_DIR/extracted_project"
+          mkdir -p "$CM_BUILD_DIR/extracted_project"
+
+          unzip -q "$ZIP_FILE" -d "$CM_BUILD_DIR/extracted_project"
+
+          echo "📂 Extracted contents:"
+          find "$CM_BUILD_DIR/extracted_project" -maxdepth 3 -print
+
+      - name: Locate Xcode project
+        script: |
+          set -e
+
+          PROJECT=$(find "$CM_BUILD_DIR/extracted_project" \
+            -type d \
+            -name "AridmansHappyPlace.xcodeproj" \
+            -print -quit)
+
+          if [ -z "$PROJECT" ]; then
+            echo "❌ AridmansHappyPlace.xcodeproj not found"
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT")
+
+          echo "✅ Xcode project found:"
+          echo "$PROJECT"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" > "$CM_BUILD_DIR/project_path.env"
+
       - name: Verify Xcode project
         script: |
           set -e
-          test -d "AridmansHappyPlace.xcodeproj"
-          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj"
-          test -f "AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme"
-          test -f "AridmansHappyPlace/AridmansHappyPlaceApp.swift"
-          echo "Project structure OK"
+
+          source "$CM_BUILD_DIR/project_path.env"
+
+          test -f "$PROJECT_DIR/AridmansHappyPlace.xcodeproj/project.pbxproj"
+          test -f "$PROJECT_DIR/AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme"
+          test -f "$PROJECT_DIR/AridmansHappyPlace/AridmansHappyPlaceApp.swift"
+
+          echo "✅ Project structure OK"
+
       - name: Build unsigned archive
         script: |
           set -e
-          rm -rf build
+
+          source "$CM_BUILD_DIR/project_path.env"
+
+          rm -rf "$CM_BUILD_DIR/build"
+          mkdir -p "$CM_BUILD_DIR/build"
+
           xcodebuild \
-            -project "AridmansHappyPlace.xcodeproj" \
+            -project "$PROJECT_DIR/AridmansHappyPlace.xcodeproj" \
             -scheme "AridmansHappyPlace" \
             -configuration Release \
             -sdk iphoneos \
@@ -29,16 +82,24 @@ workflows:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             archive
+
       - name: Package unsigned IPA
         script: |
           set -e
-          APP_PATH=$(find "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications" -maxdepth 1 -type d -name "*.app" | head -n 1)
-          test -n "$APP_PATH"
-          rm -rf "$CM_BUILD_DIR/build/Payload"
+
+          APP_PATH="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications/AridmansHappyPlace.app"
+
+          test -d "$APP_PATH"
+
           mkdir -p "$CM_BUILD_DIR/build/Payload"
           cp -R "$APP_PATH" "$CM_BUILD_DIR/build/Payload/"
+
           cd "$CM_BUILD_DIR/build"
           zip -qr "AridmansHappyPlace-unsigned.ipa" Payload
+
+          echo "✅ IPA created:"
+          ls -lh "AridmansHappyPlace-unsigned.ipa"
+
     artifacts:
       - build/AridmansHappyPlace-unsigned.ipa
-      - build/AridmansHappyPlace.xcarchive/**
+      - build/AridmansHappyPlace.xcarchive/** 

@@ -29,7 +29,7 @@ targets:
           - "*.plist"
 
     info:
-      path: AridamansHappyPlace/Info.plist
+      path: AridmansHappyPlace/Info.plist
 
     settings:
       base:

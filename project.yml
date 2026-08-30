@@ -8,7 +8,7 @@ options:
 
 settings:
   base:
-    PRODUCT_BUNDLE_IDENTIFIER: com.aridman.happyplace
+    PRODUCT_BUNDLE_IDENTIFIER: com.aridaman.happyplace
     PRODUCT_NAME: "Aridman's Happy Place"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -24,17 +24,17 @@ targets:
     platform: iOS
 
     sources:
-      - path: AridmansHappyPlace
+      - path: AridamansHappyPlace
         excludes:
           - "*.plist"
 
     info:
-      path: AridmansHappyPlace/Info.plist
+      path: AridamansHappyPlace/Info.plist
 
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.aridman.happyplace
-        PRODUCT_NAME: "Aridman's Happy Place"
+        PRODUCT_BUNDLE_IDENTIFIER: com.aridaman.happyplace
+        PRODUCT_NAME: "Aridaman's Happy Place"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO

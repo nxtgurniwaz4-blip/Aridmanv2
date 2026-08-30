@@ -25,6 +25,8 @@ targets:
 
     sources:
       - path: AridmansHappyPlace
+        excludes:
+          - "*.plist"
 
     info:
       path: AridmansHappyPlace/Info.plist

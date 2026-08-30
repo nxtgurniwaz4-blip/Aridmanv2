@@ -17,18 +17,20 @@ settings:
     CODE_SIGNING_REQUIRED: NO
     CODE_SIGN_IDENTITY: ""
     DEVELOPMENT_TEAM: ""
-    INFOPLIST_FILE: AridmansHappyPlace/Info.plist
 
 targets:
   AridmansHappyPlace:
     type: application
     platform: iOS
+
     sources:
       - path: AridmansHappyPlace
+
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aridman.happyplace
         PRODUCT_NAME: "Aridman's Happy Place"
+        INFOPLIST_FILE: AridmansHappyPlace/Info.plist
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         CODE_SIGNING_ALLOWED: NO

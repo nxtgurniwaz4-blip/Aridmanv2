@@ -35,11 +35,7 @@ workflows:
 
           unzip -o "$ZIP_FILE" -d "$TEMP_DIR"
 
-          echo "ZIP contents:"
-          find "$TEMP_DIR" -maxdepth 5 -print
-
           echo "Copying Swift files..."
-
           find "$TEMP_DIR" \
             -type f \
             -name "*.swift" \
@@ -56,65 +52,33 @@ workflows:
             cp "$INFO_PLIST" "$CM_BUILD_DIR/AridmansHappyPlace/Info.plist"
           fi
 
-          echo "Final source directory:"
-          find "$CM_BUILD_DIR/AridmansHappyPlace" -maxdepth 2 -type f -print
-
       - name: Verify source files
         script: |
           set -e
-
           cd "$CM_BUILD_DIR"
-
           test -f project.yml
           test -d AridmansHappyPlace
-
           SWIFT_COUNT=$(find AridmansHappyPlace -type f -name "*.swift" | wc -l | tr -d ' ')
-
           echo "Swift files found: $SWIFT_COUNT"
-
           if [ "$SWIFT_COUNT" -eq 0 ]; then
             echo "ERROR: No Swift source files found."
             exit 1
           fi
 
-          echo "Source verification successful."
-
       - name: Generate Xcode project
         script: |
           set -e
-
           cd "$CM_BUILD_DIR"
-
           rm -rf "Aridaman's Happy Place.xcodeproj"
-
           xcodegen generate --spec project.yml
-
-          if [ ! -d "Aridaman's Happy Place.xcodeproj" ]; then
-            echo "ERROR: Xcode project was not generated."
-            exit 1
-          fi
-
-          echo "Generated:"
-          ls -ld "Aridaman's Happy Place.xcodeproj"
-
-      - name: Show Xcode project
-        script: |
-          set -e
-
-          cd "$CM_BUILD_DIR"
-
-          xcodebuild -project "Aridaman's Happy Place.xcodeproj" -list
 
       - name: Build unsigned archive
         script: |
           set -e
-
           cd "$CM_BUILD_DIR"
-
           rm -rf build
           mkdir -p build
 
-          # Clean, modern syntax structure with all invalid custom userDefault flags removed
           xcodebuild \
             -project "Aridaman's Happy Place.xcodeproj" \
             -scheme "AridmansHappyPlace" \
@@ -132,26 +96,22 @@ workflows:
       - name: Packaging Unsigned IPA File
         script: |
           set -e
-
           APP_DIR="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications"
           APP_PATH=$(find "$APP_DIR" -maxdepth 1 -type d -name "*.app" | head -n 1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app binary container discovered inside workspace."
+            echo "ERROR: No .app binary container found."
             exit 1
           fi
 
           PAYLOAD_DIR="$CM_BUILD_DIR/build/Payload"
           rm -rf "$PAYLOAD_DIR"
           mkdir -p "$PAYLOAD_DIR"
-
           cp -R "$APP_PATH" "$PAYLOAD_DIR/"
 
           cd "$CM_BUILD_DIR/build"
           zip -r "Aridaman_Unsigned.ipa" Payload
-
           echo "IPA structural packaging task completed successfully!"
-          ls -lh "Aridaman_Unsigned.ipa"
 
     artifacts:
       - build/*.ipa

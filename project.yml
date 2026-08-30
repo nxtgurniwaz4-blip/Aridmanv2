@@ -1,44 +1,15 @@
 name: "Aridaman's Happy Place"
-
 options:
-  deploymentTarget:
-    iOS: "16.0"
-  createIntermediateGroups: true
-  developmentLanguage: en
-
-settings:
-  base:
-    PRODUCT_BUNDLE_IDENTIFIER: com.aridaman.happyplace
-    PRODUCT_NAME: "Aridman's Happy Place"
-    SWIFT_VERSION: "5.0"
-    TARGETED_DEVICE_FAMILY: "1,2"
-    SUPPORTS_MACCATALYST: NO
-    CODE_SIGNING_ALLOWED: NO
-    CODE_SIGNING_REQUIRED: NO
-    CODE_SIGN_IDENTITY: ""
-    DEVELOPMENT_TEAM: ""
-
+  bundleIdPrefix: com.aridaman
 targets:
   AridmansHappyPlace:
     type: application
     platform: iOS
-
-    sources:
-      - path: AridmansHappyPlace
-        excludes:
-          - "*.plist"
-
-    info:
-      path: AridmansHappyPlace/Info.plist
-
+    deploymentTarget: "16.0"
+    sources: [AridmansHappyPlace]
     settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.aridaman.happyplace
-        PRODUCT_NAME: "Aridaman's Happy Place"
-        SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1,2"
-        SUPPORTS_MACCATALYST: NO
-        CODE_SIGNING_ALLOWED: NO
-        CODE_SIGNING_REQUIRED: NO
-        CODE_SIGN_IDENTITY: ""
-        DEVELOPMENT_TEAM: ""
+      PRODUCT_NAME: "AridmansHappyPlace"
+      # Forces the compiler to bypass type optimization paths that cause crashes
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      SWIFT_COMPILATION_MODE: "singlefile"
+      GCC_OPTIMIZATION_LEVEL: "0"

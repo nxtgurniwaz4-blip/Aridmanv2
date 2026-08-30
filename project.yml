@@ -1,0 +1,23 @@
+name: "AridmansHappyPlace"
+options:
+  bundleIdPrefix: com.aridman
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  AridmansHappyPlace:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: AridmansHappyPlace
+        excludes:
+          - Info.plist
+    info:
+      path: AridmansHappyPlace/Info.plist
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.aridman.happyplace
+      PRODUCT_NAME: AridmansHappyPlace
+      SWIFT_VERSION: "5.0"
+      TARGETED_DEVICE_FAMILY: "1,2"
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      GCC_OPTIMIZATION_LEVEL: "0"

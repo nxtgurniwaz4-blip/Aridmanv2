@@ -283,4 +283,3 @@ workflows:
     artifacts:
       # No IPA is produced during inspection.
       # We deliberately stop before compilation.
-```

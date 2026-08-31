@@ -1,21 +1,59 @@
 workflows:
   ios_unsigned_ipa:
     name: Aridman's Happy Place - unsigned IPA
+
     environment:
       xcode: latest
+
     scripts:
+      - name: Install XcodeGen
+        script: |
+          set -e
+
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+          xcodegen --version
+
+      - name: Generate Xcode project
+        script: |
+          set -e
+
+          rm -rf "AridmansHappyPlace.xcodeproj"
+
+          xcodegen generate \
+            --spec "project.yml" \
+            --project "AridmansHappyPlace.xcodeproj"
+
+          test -d "AridmansHappyPlace.xcodeproj"
+          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj"
+
+          echo "Xcode project generated successfully"
+
       - name: Verify Xcode project
         script: |
           set -e
+
           test -d "AridmansHappyPlace.xcodeproj"
           test -f "AridmansHappyPlace.xcodeproj/project.pbxproj"
-          test -f "AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme"
           test -f "AridmansHappyPlace/AridmansHappyPlaceApp.swift"
+          test -f "AridmansHappyPlace/Info.plist"
+
           echo "Project structure OK"
+
+          echo "Available schemes:"
+          xcodebuild \
+            -project "AridmansHappyPlace.xcodeproj" \
+            -list
+
       - name: Build unsigned archive
         script: |
           set -e
-          rm -rf build
+
+          rm -rf "$CM_BUILD_DIR/build"
+          mkdir -p "$CM_BUILD_DIR/build"
+
           xcodebuild \
             -project "AridmansHappyPlace.xcodeproj" \
             -scheme "AridmansHappyPlace" \
@@ -29,16 +67,41 @@ workflows:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             archive
+
       - name: Package unsigned IPA
         script: |
           set -e
-          APP_PATH=$(find "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications" -maxdepth 1 -type d -name "*.app" | head -n 1)
+
+          ARCHIVE_PATH="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
+          APP_PATH=$(find \
+            "$ARCHIVE_PATH/Products/Applications" \
+            -maxdepth 1 \
+            -type d \
+            -name "*.app" \
+            | head -n 1)
+
           test -n "$APP_PATH"
+
+          echo "Found app:"
+          echo "$APP_PATH"
+
           rm -rf "$CM_BUILD_DIR/build/Payload"
           mkdir -p "$CM_BUILD_DIR/build/Payload"
+
           cp -R "$APP_PATH" "$CM_BUILD_DIR/build/Payload/"
+
           cd "$CM_BUILD_DIR/build"
-          zip -qr "AridmansHappyPlace-unsigned.ipa" Payload
+
+          rm -f "AridmansHappyPlace-unsigned.ipa"
+
+          zip -qr \
+            "AridmansHappyPlace-unsigned.ipa" \
+            Payload
+
+          test -f "AridmansHappyPlace-unsigned.ipa"
+
+          echo "IPA created successfully"
+
     artifacts:
       - build/AridmansHappyPlace-unsigned.ipa
       - build/AridmansHappyPlace.xcarchive/**

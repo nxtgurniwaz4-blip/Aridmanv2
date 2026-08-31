@@ -1,38 +1,36 @@
 
 workflows:
   ios_unsigned_ipa:
-    name: Aridman's Happy Place - inspect Swift source
+    name: Aridman's Happy Place - Unsigned IPA
 
     environment:
       xcode: latest
 
     scripts:
 
-      # ---------------------------------------------------------
-      # 1. Extract the actual project from the ZIP
-      # ---------------------------------------------------------
-      - name: Extract Aridmans Happy Place project
+      # =========================================================
+      # 1. Extract the ZIP
+      # =========================================================
+      - name: Extract project
         script: |
           set -e
 
           ZIP_FILE="Aridmans-Happy-Place-Everything 5.zip"
 
-          echo "Checking for ZIP..."
+          echo "Checking ZIP..."
           test -f "$ZIP_FILE"
-
-          echo "Found:"
-          ls -lh "$ZIP_FILE"
 
           rm -rf extracted
           rm -rf AridmansHappyPlace
+          rm -rf AridmansHappyPlace.xcodeproj
 
           mkdir -p extracted
           mkdir -p AridmansHappyPlace
 
-          echo "Extracting ZIP..."
+          echo "Extracting..."
           unzip -q "$ZIP_FILE" -d extracted
 
-          echo "Searching for AridmansHappyPlaceApp.swift..."
+          echo "Searching for project source..."
 
           APP_FILE=$(find extracted \
             -type f \
@@ -41,7 +39,7 @@ workflows:
             -quit)
 
           if [ -z "$APP_FILE" ]; then
-            echo "ERROR: AridmansHappyPlaceApp.swift was not found."
+            echo "ERROR: AridmansHappyPlaceApp.swift not found."
             echo "ZIP contents:"
             find extracted -maxdepth 5 -type f -print
             exit 1
@@ -49,25 +47,119 @@ workflows:
 
           SOURCE_DIR=$(dirname "$APP_FILE")
 
-          echo "Found source directory:"
+          echo "Source directory:"
           echo "$SOURCE_DIR"
 
           cp -R "$SOURCE_DIR"/. AridmansHappyPlace/
 
           echo ""
-          echo "===== EXTRACTED PROJECT FILES ====="
+          echo "Project files:"
           find AridmansHappyPlace -maxdepth 3 -type f -print
-          echo "===================================="
 
           test -f "AridmansHappyPlace/AridmansHappyPlaceApp.swift"
           test -f "AridmansHappyPlace/Videocatalog.swift"
 
-          echo "Project extraction successful."
+          echo "Extraction successful."
 
 
-      # ---------------------------------------------------------
-      # 2. Install XcodeGen
-      # ---------------------------------------------------------
+      # =========================================================
+      # 2. Repair corrupted Videocatalog.swift
+      # =========================================================
+      - name: Repair Videocatalog.swift
+        script: |
+          set -e
+
+          FILE="AridmansHappyPlace/Videocatalog.swift"
+
+          echo ""
+          echo "=========================================="
+          echo "Repairing Videocatalog.swift"
+          echo "=========================================="
+
+          test -f "$FILE"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("AridmansHappyPlace/Videocatalog.swift")
+          data = p.read_bytes()
+
+          print("Original size:", len(data), "bytes")
+          print("Original lines:", len(data.splitlines()))
+
+          # The inspection showed binary garbage appended after
+          # the legitimate final closing brace.
+          #
+          # Find the final '}' and keep everything through it.
+          last_brace = data.rfind(b'}')
+
+          if last_brace == -1:
+              raise SystemExit("ERROR: No closing brace found.")
+
+          repaired = data[:last_brace + 1] + b'\n'
+
+          removed = len(data) - len(repaired)
+
+          p.write_bytes(repaired)
+
+          print("Repaired size:", len(repaired), "bytes")
+          print("Removed:", removed, "bytes")
+
+          if removed <= 0:
+              raise SystemExit(
+                  "ERROR: No trailing data was removed. "
+                  "Expected corrupted bytes after final brace."
+              )
+
+          print("Videocatalog.swift repaired.")
+          PY
+
+          echo ""
+          echo "Last 10 lines:"
+          tail -n 10 "$FILE"
+
+          echo ""
+          echo "Checking UTF-8 and binary content..."
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("AridmansHappyPlace/Videocatalog.swift")
+          data = p.read_bytes()
+
+          # UTF-8 validation
+          try:
+              data.decode("utf-8")
+          except UnicodeDecodeError as e:
+              print("ERROR: Invalid UTF-8:", e)
+              raise SystemExit(1)
+
+          # Check for control/binary bytes.
+          bad = []
+
+          for byte in data:
+              if byte in (9, 10, 13):
+                  continue
+
+              if 32 <= byte <= 126:
+                  continue
+
+              bad.append(byte)
+
+          if bad:
+              print(
+                  "ERROR: Non-printable/non-ASCII bytes remain:",
+                  len(bad)
+              )
+              raise SystemExit(1)
+
+          print("OK: Videocatalog.swift is clean.")
+          PY
+
+
+      # =========================================================
+      # 3. Install XcodeGen
+      # =========================================================
       - name: Install XcodeGen
         script: |
           set -e
@@ -76,18 +168,21 @@ workflows:
             brew install xcodegen
           fi
 
-          echo "XcodeGen version:"
+          echo "XcodeGen:"
           xcodegen --version
 
 
-      # ---------------------------------------------------------
-      # 3. Generate Xcode project
-      # ---------------------------------------------------------
+      # =========================================================
+      # 4. Generate Xcode project
+      # =========================================================
       - name: Generate Xcode project
         script: |
           set -e
 
-          rm -rf AridmansHappyPlace.xcodeproj
+          test -f "project.yml"
+          test -d "AridmansHappyPlace"
+
+          rm -rf "AridmansHappyPlace.xcodeproj"
 
           echo "Generating Xcode project..."
 
@@ -99,9 +194,9 @@ workflows:
           echo "Xcode project generated successfully."
 
 
-      # ---------------------------------------------------------
-      # 4. Verify project
-      # ---------------------------------------------------------
+      # =========================================================
+      # 5. Verify Xcode project
+      # =========================================================
       - name: Verify Xcode project
         script: |
           set -e
@@ -118,168 +213,115 @@ workflows:
             -project "AridmansHappyPlace.xcodeproj" \
             -list
 
-          echo "=========================="
-
-
-      # ---------------------------------------------------------
-      # 5. INSPECT Videocatalog.swift
-      #
-      # IMPORTANT:
-      # This step DOES NOT change the file.
-      # It only prints the suspicious area and raw bytes.
-      # ---------------------------------------------------------
-      - name: Inspect Videocatalog.swift
-        script: |
-          set +e
-
-          FILE="AridmansHappyPlace/Videocatalog.swift"
-
           echo ""
-          echo "=============================================="
-          echo " VIDEOCATALOG.SWIFT INSPECTION"
-          echo "=============================================="
-
-          echo ""
-          echo "===== FILE INFORMATION ====="
-          ls -lh "$FILE"
-          wc -c "$FILE"
-          wc -l "$FILE"
-
-          echo ""
-          echo "===== LINES 375-395 ====="
-
-          nl -ba "$FILE" | sed -n '375,395p'
-
-          echo ""
-          echo "===== RAW BYTES AROUND LINE 389 ====="
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("AridmansHappyPlace/Videocatalog.swift")
-          data = p.read_bytes()
-
-          lines = data.splitlines(keepends=True)
-
-          print("Total physical lines:", len(lines))
-          print()
-
-          start = max(0, 374)
-          end = min(len(lines), 395)
-
-          for index in range(start, end):
-              line = lines[index]
-
-              print(f"--- RAW LINE {index + 1} ---")
-              print(repr(line))
-
-          print()
-          print("===== NON-TEXT BYTE CHECK =====")
-
-          bad = []
-
-          for index, byte in enumerate(data):
-              # Allow normal ASCII control characters:
-              # LF, CR, TAB.
-              if byte in (9, 10, 13):
-                  continue
-
-              # Normal printable ASCII.
-              if 32 <= byte <= 126:
-                  continue
-
-              bad.append((index, byte))
-
-          print("Non-printable/non-ASCII byte count:", len(bad))
-
-          if bad:
-              print()
-              print("First 100 suspicious bytes:")
-
-              for position, byte in bad[:100]:
-                  print(f"offset={position} byte={byte}")
-
-          print()
-          print("===== UTF-8 CHECK =====")
-
-          try:
-              data.decode("utf-8")
-              print("UTF-8: VALID")
-          except UnicodeDecodeError as e:
-              print("UTF-8: INVALID")
-              print("Error:", e)
-
-          print()
-          print("===== END INSPECTION =====")
-          PY
-
-          echo ""
-          echo "Inspection complete."
-
-          # Stop here intentionally.
-          # We do NOT build until the source has been inspected.
-          exit 0
+          echo "Project verification successful."
 
 
-      # ---------------------------------------------------------
+      # =========================================================
       # 6. Build unsigned archive
-      #
-      # DISABLED during inspection.
-      # ---------------------------------------------------------
-      # - name: Build unsigned archive
-      #   script: |
-      #     set -e
-      #
-      #     rm -rf "$CM_BUILD_DIR/build"
-      #     mkdir -p "$CM_BUILD_DIR/build"
-      #
-      #     xcodebuild \
-      #       -project "AridmansHappyPlace.xcodeproj" \
-      #       -scheme "AridmansHappyPlace" \
-      #       -configuration Release \
-      #       -sdk iphoneos \
-      #       -destination "generic/platform=iOS" \
-      #       -archivePath "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive" \
-      #       COMPILER_INDEX_STORE_ENABLE=NO \
-      #       CODE_SIGNING_ALLOWED=NO \
-      #       CODE_SIGNING_REQUIRED=NO \
-      #       CODE_SIGN_IDENTITY="" \
-      #       DEVELOPMENT_TEAM="" \
-      #       archive
+      # =========================================================
+      - name: Build unsigned archive
+        script: |
+          set -e
+
+          rm -rf "$CM_BUILD_DIR/build"
+
+          mkdir -p "$CM_BUILD_DIR/build"
+
+          echo ""
+          echo "=========================================="
+          echo "Building unsigned iOS archive"
+          echo "=========================================="
+
+          xcodebuild \
+            -project "AridmansHappyPlace.xcodeproj" \
+            -scheme "AridmansHappyPlace" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            archive
+
+          test -d "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
+
+          echo ""
+          echo "Archive created successfully."
 
 
-      # ---------------------------------------------------------
-      # 7. Package unsigned IPA
-      #
-      # DISABLED during inspection.
-      # ---------------------------------------------------------
-      # - name: Package unsigned IPA
-      #   script: |
-      #     set -e
-      #
-      #     ARCHIVE_PATH="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
-      #
-      #     APP_PATH=$(find \
-      #       "$ARCHIVE_PATH/Products/Applications" \
-      #       -maxdepth 1 \
-      #       -type d \
-      #       -name "*.app" \
-      #       | head -n 1)
-      #
-      #     test -n "$APP_PATH"
-      #
-      #     rm -rf "$CM_BUILD_DIR/build/Payload"
-      #     mkdir -p "$CM_BUILD_DIR/build/Payload"
-      #
-      #     cp -R "$APP_PATH" "$CM_BUILD_DIR/build/Payload/"
-      #
-      #     cd "$CM_BUILD_DIR/build"
-      #
-      #     zip -qr \
-      #       "AridmansHappyPlace-unsigned.ipa" \
-      #       Payload
+      # =========================================================
+      # 7. Find application
+      # =========================================================
+      - name: Locate application
+        script: |
+          set -e
+
+          ARCHIVE_PATH="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
+
+          echo "Searching archive..."
+
+          APP_PATH=$(find \
+            "$ARCHIVE_PATH/Products/Applications" \
+            -maxdepth 1 \
+            -type d \
+            -name "*.app" \
+            -print \
+            -quit)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found."
+            find "$ARCHIVE_PATH" -maxdepth 5 -print
+            exit 1
+          fi
+
+          echo "APP:"
+          echo "$APP_PATH"
+
+          cp -R "$APP_PATH" "$CM_BUILD_DIR/AridmansHappyPlace.app"
+
+          test -d "$CM_BUILD_DIR/AridmansHappyPlace.app"
+
+
+      # =========================================================
+      # 8. Package unsigned IPA
+      # =========================================================
+      - name: Package unsigned IPA
+        script: |
+          set -e
+
+          BUILD_DIR="$CM_BUILD_DIR/build"
+
+          rm -rf "$BUILD_DIR/Payload"
+
+          mkdir -p "$BUILD_DIR/Payload"
+
+          cp -R \
+            "$CM_BUILD_DIR/AridmansHappyPlace.app" \
+            "$BUILD_DIR/Payload/"
+
+          cd "$BUILD_DIR"
+
+          rm -f "AridmansHappyPlace-unsigned.ipa"
+
+          zip -qr \
+            "AridmansHappyPlace-unsigned.ipa" \
+            Payload
+
+          test -f "AridmansHappyPlace-unsigned.ipa"
+
+          echo ""
+          echo "=========================================="
+          echo "IPA CREATED"
+          echo "=========================================="
+
+          ls -lh "AridmansHappyPlace-unsigned.ipa"
 
 
     artifacts:
-      # No IPA is produced during inspection.
-      # We deliberately stop before compilation.
+      - build/AridmansHappyPlace-unsigned.ipa
+      - build/AridmansHappyPlace.xcarchive
+

@@ -1,0 +1,44 @@
+workflows:
+  ios_unsigned_ipa:
+    name: Aridman's Happy Place - unsigned IPA
+    environment:
+      xcode: latest
+    scripts:
+      - name: Verify Xcode project
+        script: |
+          set -e
+          test -d "AridmansHappyPlace.xcodeproj"
+          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj"
+          test -f "AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme"
+          test -f "AridmansHappyPlace/AridmansHappyPlaceApp.swift"
+          echo "Project structure OK"
+      - name: Build unsigned archive
+        script: |
+          set -e
+          rm -rf build
+          xcodebuild \
+            -project "AridmansHappyPlace.xcodeproj" \
+            -scheme "AridmansHappyPlace" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            archive
+      - name: Package unsigned IPA
+        script: |
+          set -e
+          APP_PATH=$(find "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications" -maxdepth 1 -type d -name "*.app" | head -n 1)
+          test -n "$APP_PATH"
+          rm -rf "$CM_BUILD_DIR/build/Payload"
+          mkdir -p "$CM_BUILD_DIR/build/Payload"
+          cp -R "$APP_PATH" "$CM_BUILD_DIR/build/Payload/"
+          cd "$CM_BUILD_DIR/build"
+          zip -qr "AridmansHappyPlace-unsigned.ipa" Payload
+    artifacts:
+      - build/AridmansHappyPlace-unsigned.ipa
+      - build/AridmansHappyPlace.xcarchive/**

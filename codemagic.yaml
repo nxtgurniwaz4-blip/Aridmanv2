@@ -6,6 +6,47 @@ workflows:
       xcode: latest
 
     scripts:
+      - name: Extract project
+        script: |
+          set -e
+
+          echo "Repository contents:"
+          find . -maxdepth 2 -print
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No ZIP file found"
+            exit 1
+          fi
+
+          echo "Extracting: $ZIP_FILE"
+
+          rm -rf extracted
+          mkdir -p extracted
+
+          unzip -q "$ZIP_FILE" -d extracted
+
+          echo "Extracted contents:"
+          find extracted -maxdepth 3 -print
+
+          SOURCE_DIR=$(find extracted -type f -name "AridmansHappyPlaceApp.swift" -print -quit | xargs -I{} dirname "{}")
+
+          if [ -z "$SOURCE_DIR" ]; then
+            echo "ERROR: AridmansHappyPlaceApp.swift was not found inside ZIP"
+            exit 1
+          fi
+
+          echo "Swift source directory: $SOURCE_DIR"
+
+          rm -rf AridmansHappyPlace
+          mkdir -p AridmansHappyPlace
+
+          cp -R "$SOURCE_DIR"/. AridmansHappyPlace/
+
+          echo "Project files:"
+          find AridmansHappyPlace -maxdepth 2 -type f -print
+
       - name: Install XcodeGen
         script: |
           set -e
@@ -20,14 +61,12 @@ workflows:
         script: |
           set -e
 
-          rm -rf "AridmansHappyPlace.xcodeproj"
+          rm -rf AridmansHappyPlace.xcodeproj
 
-          xcodegen generate \
-            --spec "project.yml" \
-            --project "AridmansHappyPlace.xcodeproj"
+          xcodegen generate --spec project.yml
 
-          test -d "AridmansHappyPlace.xcodeproj"
-          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj"
+          test -d AridmansHappyPlace.xcodeproj
+          test -f AridmansHappyPlace.xcodeproj/project.pbxproj
 
           echo "Xcode project generated successfully"
 
@@ -35,28 +74,23 @@ workflows:
         script: |
           set -e
 
-          test -d "AridmansHappyPlace.xcodeproj"
-          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj"
-          test -f "AridmansHappyPlace/AridmansHappyPlaceApp.swift"
-          test -f "AridmansHappyPlace/Info.plist"
+          test -d AridmansHappyPlace.xcodeproj
+          test -f AridmansHappyPlace.xcodeproj/project.pbxproj
+          test -f AridmansHappyPlace/AridmansHappyPlaceApp.swift
 
-          echo "Project structure OK"
-
-          echo "Available schemes:"
           xcodebuild \
-            -project "AridmansHappyPlace.xcodeproj" \
+            -project AridmansHappyPlace.xcodeproj \
             -list
 
       - name: Build unsigned archive
         script: |
           set -e
 
-          rm -rf "$CM_BUILD_DIR/build"
-          mkdir -p "$CM_BUILD_DIR/build"
+          mkdir -p build
 
           xcodebuild \
-            -project "AridmansHappyPlace.xcodeproj" \
-            -scheme "AridmansHappyPlace" \
+            -project AridmansHappyPlace.xcodeproj \
+            -scheme AridmansHappyPlace \
             -configuration Release \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
@@ -65,25 +99,20 @@ workflows:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
             archive
 
-      - name: Package unsigned IPA
+      - name: Create unsigned IPA
         script: |
           set -e
 
-          ARCHIVE_PATH="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
           APP_PATH=$(find \
-            "$ARCHIVE_PATH/Products/Applications" \
+            "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive/Products/Applications" \
             -maxdepth 1 \
             -type d \
             -name "*.app" \
             | head -n 1)
 
           test -n "$APP_PATH"
-
-          echo "Found app:"
-          echo "$APP_PATH"
 
           rm -rf "$CM_BUILD_DIR/build/Payload"
           mkdir -p "$CM_BUILD_DIR/build/Payload"
@@ -92,15 +121,11 @@ workflows:
 
           cd "$CM_BUILD_DIR/build"
 
-          rm -f "AridmansHappyPlace-unsigned.ipa"
+          zip -qr AridmansHappyPlace-unsigned.ipa Payload
 
-          zip -qr \
-            "AridmansHappyPlace-unsigned.ipa" \
-            Payload
+          test -f AridmansHappyPlace-unsigned.ipa
 
-          test -f "AridmansHappyPlace-unsigned.ipa"
-
-          echo "IPA created successfully"
+          echo "UNSIGNED IPA CREATED"
 
     artifacts:
       - build/AridmansHappyPlace-unsigned.ipa

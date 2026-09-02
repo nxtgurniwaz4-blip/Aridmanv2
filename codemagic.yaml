@@ -1,0 +1,83 @@
+workflows:
+  ios_unsigned_ipa:
+    name: Aridman's Happy Place - unsigned iOS IPA
+    environment:
+      xcode: latest
+      vars:
+        YOUTUBE_API_KEY: $YOUTUBE_API_KEY
+
+    scripts:
+      - name: Validate project
+        script: |
+          set -euo pipefail
+          test -d "AridmansHappyPlace.xcodeproj"
+          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj"
+          test -f "AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme"
+          test -f "AridmansHappyPlace/Info.plist"
+          test -f "AridmansHappyPlace/VideoCatalog.swift"
+          test -n "${YOUTUBE_API_KEY:-}" || {
+            echo "YOUTUBE_API_KEY is missing."
+            echo "Add it in Codemagic as a Secret environment variable."
+            exit 1
+          }
+
+          python3 - <<'PY'
+          from pathlib import Path
+          for p in Path("AridmansHappyPlace").glob("*.swift"):
+              data = p.read_bytes()
+              data.decode("utf-8")
+              if any(b == 0 or (b < 32 and b not in (9, 10, 13)) for b in data):
+                  raise SystemExit(f"Invalid control/binary byte in {p}")
+              print("OK:", p)
+          PY
+
+      - name: Show Xcode project
+        script: |
+          set -euo pipefail
+          xcodebuild -project AridmansHappyPlace.xcodeproj -list
+          xcodebuild \
+            -project AridmansHappyPlace.xcodeproj \
+            -scheme AridmansHappyPlace \
+            -showBuildSettings >/dev/null
+
+      - name: Build unsigned archive
+        script: |
+          set -euo pipefail
+          rm -rf "$CM_BUILD_DIR/build"
+          mkdir -p "$CM_BUILD_DIR/build"
+
+          xcodebuild archive \
+            -project AridmansHappyPlace.xcodeproj \
+            -scheme AridmansHappyPlace \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            YOUTUBE_API_KEY="$YOUTUBE_API_KEY"
+
+      - name: Package unsigned IPA
+        script: |
+          set -euo pipefail
+          ARCHIVE="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
+          APP="$ARCHIVE/Products/Applications/AridmansHappyPlace.app"
+          BUILD="$CM_BUILD_DIR/build"
+
+          test -d "$APP"
+          rm -rf "$BUILD/Payload"
+          mkdir -p "$BUILD/Payload"
+          cp -R "$APP" "$BUILD/Payload/"
+
+          cd "$BUILD"
+          rm -f "AridmansHappyPlace-unsigned.ipa"
+          /usr/bin/zip -qr "AridmansHappyPlace-unsigned.ipa" Payload
+          test -f "AridmansHappyPlace-unsigned.ipa"
+          unzip -l "AridmansHappyPlace-unsigned.ipa" | head -40
+
+    artifacts:
+      - build/AridmansHappyPlace-unsigned.ipa
+      - build/AridmansHappyPlace.xcarchive

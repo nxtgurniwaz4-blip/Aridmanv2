@@ -43,6 +43,7 @@
 			);
 			sourceTree = "<group>";
 		};
+
 		A40000000000000000000002 /* AridmansHappyPlace */ = {
 			isa = PBXGroup;
 			children = (
@@ -53,9 +54,10 @@
 				A20000000000000000000005 /* VideoListView.swift */,
 				A20000000000000000000006 /* Info.plist */,
 			);
-			path = AridmansHappyPlace;
+			path = .;
 			sourceTree = "<group>";
 		};
+
 		A40000000000000000000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -154,6 +156,7 @@
 			};
 			name = Debug;
 		};
+
 		A80000000000000000000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -167,6 +170,7 @@
 			};
 			name = Release;
 		};
+
 		A80000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -185,11 +189,12 @@
 			};
 			name = Debug;
 		};
+
 		A80000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
-				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_FILE = Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aridman.happyplace;
 				PRODUCT_NAME = AridmansHappyPlace;
 				SWIFT_VERSION = 5.0;
@@ -215,6 +220,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+
 		A60000000000000000000002 /* Build configuration list for PBXNativeTarget "AridmansHappyPlace" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -226,5 +232,6 @@
 		};
 /* End XCConfigurationList section */
 	};
+
 	rootObject = A70000000000000000000001 /* Project object */;
 }

@@ -49,18 +49,40 @@ workflows:
           echo ""
           echo "=== Checking Swift source ==="
 
-          test -f "AridmansHappyPlaceApp.swift"
-          test -f "CategoriesView.swift"
-          test -f "CategoryTile.swift"
-          test -f "VideoCatalog.swift"
-          test -f "VideoListView.swift"
+          test -f "AridmansHappyPlaceApp.swift" || {
+            echo "ERROR: AridmansHappyPlaceApp.swift is missing."
+            exit 1
+          }
+
+          test -f "CategoriesView.swift" || {
+            echo "ERROR: CategoriesView.swift is missing."
+            exit 1
+          }
+
+          test -f "CategoryTile.swift" || {
+            echo "ERROR: CategoryTile.swift is missing."
+            exit 1
+          }
+
+          test -f "VideoCatalog.swift" || {
+            echo "ERROR: VideoCatalog.swift is missing."
+            exit 1
+          }
+
+          test -f "VideoListView.swift" || {
+            echo "ERROR: VideoListView.swift is missing."
+            exit 1
+          }
 
           echo "Swift source files: OK"
 
           echo ""
           echo "=== Checking Info.plist ==="
 
-          test -f "Info.plist"
+          test -f "Info.plist" || {
+            echo "ERROR: Info.plist is missing."
+            exit 1
+          }
 
           echo "Info.plist: OK"
 
@@ -69,9 +91,7 @@ workflows:
 
           if [ -z "${YOUTUBE_API_KEY:-}" ]; then
             echo "ERROR: YOUTUBE_API_KEY is missing."
-            echo ""
-            echo "The 'youtube' environment variable group was not loaded."
-            echo "Check Codemagic Environment Variables."
+            echo "Make sure the 'youtube' environment variable group is enabled."
             exit 1
           fi
 
@@ -96,10 +116,10 @@ workflows:
 
               data = path.read_bytes()
 
-              # Verify UTF-8
+              # Make sure the source is valid UTF-8.
               data.decode("utf-8")
 
-              # Detect binary/control characters
+              # Detect binary/control characters.
               for byte in data:
                   if byte == 0 or (
                       byte < 32 and
@@ -124,11 +144,16 @@ workflows:
         script: |
           set -euo pipefail
 
+          echo "======================================"
+          echo " XCODE INFORMATION"
+          echo "======================================"
+
+          echo ""
           echo "=== Xcode version ==="
           xcodebuild -version
 
           echo ""
-          echo "=== Xcode project information ==="
+          echo "=== Available project information ==="
 
           xcodebuild \
             -project "AridmansHappyPlace.xcodeproj" \
@@ -147,7 +172,9 @@ workflows:
         script: |
           set -euo pipefail
 
-          echo "=== Preparing build directory ==="
+          echo "======================================"
+          echo " BUILDING UNSIGNED ARCHIVE"
+          echo "======================================"
 
           BUILD_DIR="$CM_BUILD_DIR/build"
           ARCHIVE="$BUILD_DIR/AridmansHappyPlace.xcarchive"
@@ -156,4 +183,113 @@ workflows:
           mkdir -p "$BUILD_DIR"
 
           echo ""
-          echo "=== Building unsigned iOS archive ==="
+          echo "=== Running xcodebuild archive ==="
+
+          xcodebuild archive \
+            -project "AridmansHappyPlace.xcodeproj" \
+            -scheme "AridmansHappyPlace" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            YOUTUBE_API_KEY="$YOUTUBE_API_KEY"
+
+          echo ""
+          echo "=== Checking archive ==="
+
+          test -d "$ARCHIVE" || {
+            echo "ERROR: Archive was not created."
+            exit 1
+          }
+
+          echo "Archive successfully created."
+
+          echo ""
+          echo "Archive location:"
+          echo "$ARCHIVE"
+
+
+      - name: Package unsigned IPA
+        script: |
+          set -euo pipefail
+
+          echo "======================================"
+          echo " PACKAGING UNSIGNED IPA"
+          echo "======================================"
+
+          BUILD_DIR="$CM_BUILD_DIR/build"
+          ARCHIVE="$BUILD_DIR/AridmansHappyPlace.xcarchive"
+          APP="$ARCHIVE/Products/Applications/AridmansHappyPlace.app"
+          IPA="$BUILD_DIR/AridmansHappyPlace-unsigned.ipa"
+
+          echo ""
+          echo "=== Checking archive ==="
+
+          test -d "$ARCHIVE" || {
+            echo "ERROR: Archive does not exist."
+            exit 1
+          }
+
+          echo ""
+          echo "=== Checking .app ==="
+
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: AridmansHappyPlace.app was not found."
+            echo ""
+            echo "Applications inside archive:"
+            find "$ARCHIVE/Products" -maxdepth 5 -type d -print || true
+            exit 1
+          fi
+
+          echo "Found:"
+          echo "$APP"
+
+          echo ""
+          echo "=== Creating Payload ==="
+
+          rm -rf "$BUILD_DIR/Payload"
+          mkdir -p "$BUILD_DIR/Payload"
+
+          cp -R "$APP" "$BUILD_DIR/Payload/"
+
+          echo ""
+          echo "=== Creating IPA ==="
+
+          cd "$BUILD_DIR"
+
+          rm -f "AridmansHappyPlace-unsigned.ipa"
+
+          /usr/bin/zip \
+            -qr \
+            "AridmansHappyPlace-unsigned.ipa" \
+            "Payload"
+
+          echo ""
+          echo "=== Verifying IPA ==="
+
+          test -f "$IPA" || {
+            echo "ERROR: IPA was not created."
+            exit 1
+          }
+
+          echo ""
+          echo "======================================"
+          echo " UNSIGNED IPA CREATED SUCCESSFULLY"
+          echo "======================================"
+
+          ls -lh "$IPA"
+
+          echo ""
+          echo "=== IPA contents ==="
+
+          unzip -l "$IPA" | head -60
+
+
+    artifacts:
+      - build/AridmansHappyPlace-unsigned.ipa
+      - build/AridmansHappyPlace.xcarchive

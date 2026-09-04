@@ -4,6 +4,8 @@ workflows:
 
     environment:
       xcode: latest
+      groups:
+        - youtube
 
     scripts:
 
@@ -38,7 +40,7 @@ workflows:
           }
 
           test -f "AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme" || {
-            echo "ERROR: Shared Xcode scheme is missing."
+            echo "ERROR: AridmansHappyPlace.xcscheme is missing."
             exit 1
           }
 
@@ -68,10 +70,8 @@ workflows:
           if [ -z "${YOUTUBE_API_KEY:-}" ]; then
             echo "ERROR: YOUTUBE_API_KEY is missing."
             echo ""
-            echo "Add YOUTUBE_API_KEY in:"
-            echo "Codemagic → Environment variables"
-            echo ""
-            echo "Mark it as Secret."
+            echo "The 'youtube' environment variable group was not loaded."
+            echo "Check Codemagic Environment Variables."
             exit 1
           fi
 
@@ -96,7 +96,7 @@ workflows:
 
               data = path.read_bytes()
 
-              # UTF-8 validation
+              # Verify UTF-8
               data.decode("utf-8")
 
               # Detect binary/control characters
@@ -157,89 +157,3 @@ workflows:
 
           echo ""
           echo "=== Building unsigned iOS archive ==="
-
-          xcodebuild archive \
-            -project "AridmansHappyPlace.xcodeproj" \
-            -scheme "AridmansHappyPlace" \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination "generic/platform=iOS" \
-            -archivePath "$ARCHIVE" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            YOUTUBE_API_KEY="$YOUTUBE_API_KEY"
-
-          echo ""
-          echo "=== Checking archive ==="
-
-          test -d "$ARCHIVE"
-
-          echo "Archive successfully created:"
-          echo "$ARCHIVE"
-
-
-      - name: Package unsigned IPA
-        script: |
-          set -euo pipefail
-
-          echo "=== Packaging IPA ==="
-
-          BUILD_DIR="$CM_BUILD_DIR/build"
-          ARCHIVE="$BUILD_DIR/AridmansHappyPlace.xcarchive"
-          APP="$ARCHIVE/Products/Applications/AridmansHappyPlace.app"
-          IPA="$BUILD_DIR/AridmansHappyPlace-unsigned.ipa"
-
-          echo ""
-          echo "Checking built application..."
-
-          test -d "$APP" || {
-            echo "ERROR: AridmansHappyPlace.app was not found."
-            echo ""
-            echo "Archive contents:"
-            find "$ARCHIVE" -maxdepth 5 -type d | head -100
-            exit 1
-          }
-
-          echo "Application found."
-
-          echo ""
-          echo "Creating Payload directory..."
-
-          rm -rf "$BUILD_DIR/Payload"
-          mkdir -p "$BUILD_DIR/Payload"
-
-          cp -R "$APP" "$BUILD_DIR/Payload/"
-
-          echo ""
-          echo "Creating unsigned IPA..."
-
-          cd "$BUILD_DIR"
-
-          rm -f "AridmansHappyPlace-unsigned.ipa"
-
-          /usr/bin/zip \
-            -qr \
-            "AridmansHappyPlace-unsigned.ipa" \
-            Payload
-
-          test -f "$IPA"
-
-          echo ""
-          echo "======================================"
-          echo " UNSIGNED IPA CREATED"
-          echo "======================================"
-
-          ls -lh "$IPA"
-
-          echo ""
-          echo "=== IPA contents ==="
-
-          unzip -l "$IPA" | head -60
-
-
-    artifacts:
-      - build/AridmansHappyPlace-unsigned.ipa
-      - build/AridmansHappyPlace.xcarchive

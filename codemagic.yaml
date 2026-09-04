@@ -1,58 +1,170 @@
 workflows:
   ios_unsigned_ipa:
     name: Aridman's Happy Place - unsigned iOS IPA
+
     environment:
       xcode: latest
-      vars:
-        YOUTUBE_API_KEY: $YOUTUBE_API_KEY
 
     scripts:
+
       - name: Validate project
         script: |
           set -euo pipefail
-          test -d "AridmansHappyPlace.xcodeproj"
-          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj"
-          test -f "AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme"
-          test -f "AridmansHappyPlace/Info.plist"
-          test -f "AridmansHappyPlace/VideoCatalog.swift"
-          test -n "${YOUTUBE_API_KEY:-}" || {
-            echo "YOUTUBE_API_KEY is missing."
-            echo "Add it in Codemagic as a Secret environment variable."
+
+          echo "======================================"
+          echo " ARIDMAN'S HAPPY PLACE"
+          echo " Project validation"
+          echo "======================================"
+
+          echo ""
+          echo "=== Current directory ==="
+          pwd
+
+          echo ""
+          echo "=== Repository contents ==="
+          ls -la
+
+          echo ""
+          echo "=== Checking Xcode project ==="
+
+          test -d "AridmansHappyPlace.xcodeproj" || {
+            echo "ERROR: AridmansHappyPlace.xcodeproj is missing."
             exit 1
           }
 
+          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj" || {
+            echo "ERROR: project.pbxproj is missing."
+            exit 1
+          }
+
+          test -f "AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme" || {
+            echo "ERROR: Shared Xcode scheme is missing."
+            exit 1
+          }
+
+          echo "Xcode project structure: OK"
+
+          echo ""
+          echo "=== Checking Swift source ==="
+
+          test -f "AridmansHappyPlaceApp.swift"
+          test -f "CategoriesView.swift"
+          test -f "CategoryTile.swift"
+          test -f "VideoCatalog.swift"
+          test -f "VideoListView.swift"
+
+          echo "Swift source files: OK"
+
+          echo ""
+          echo "=== Checking Info.plist ==="
+
+          test -f "Info.plist"
+
+          echo "Info.plist: OK"
+
+          echo ""
+          echo "=== Checking YouTube API key ==="
+
+          if [ -z "${YOUTUBE_API_KEY:-}" ]; then
+            echo "ERROR: YOUTUBE_API_KEY is missing."
+            echo ""
+            echo "Add YOUTUBE_API_KEY in:"
+            echo "Codemagic → Environment variables"
+            echo ""
+            echo "Mark it as Secret."
+            exit 1
+          fi
+
+          echo "YOUTUBE_API_KEY is present."
+
+          echo ""
+          echo "=== Validating Swift files ==="
+
           python3 - <<'PY'
           from pathlib import Path
-          for p in Path("AridmansHappyPlace").glob("*.swift"):
-              data = p.read_bytes()
+
+          files = [
+              Path("AridmansHappyPlaceApp.swift"),
+              Path("CategoriesView.swift"),
+              Path("CategoryTile.swift"),
+              Path("VideoCatalog.swift"),
+              Path("VideoListView.swift"),
+          ]
+
+          for path in files:
+              print(f"Checking {path}...")
+
+              data = path.read_bytes()
+
+              # UTF-8 validation
               data.decode("utf-8")
-              if any(b == 0 or (b < 32 and b not in (9, 10, 13)) for b in data):
-                  raise SystemExit(f"Invalid control/binary byte in {p}")
-              print("OK:", p)
+
+              # Detect binary/control characters
+              for byte in data:
+                  if byte == 0 or (
+                      byte < 32 and
+                      byte not in (9, 10, 13)
+                  ):
+                      raise SystemExit(
+                          f"ERROR: Invalid control/binary byte in {path}"
+                      )
+
+              print(f"OK: {path}")
+
+          print("All Swift files are valid UTF-8 text.")
           PY
+
+          echo ""
+          echo "======================================"
+          echo " PROJECT VALIDATION PASSED"
+          echo "======================================"
+
 
       - name: Show Xcode project
         script: |
           set -euo pipefail
-          xcodebuild -project AridmansHappyPlace.xcodeproj -list
+
+          echo "=== Xcode version ==="
+          xcodebuild -version
+
+          echo ""
+          echo "=== Xcode project information ==="
+
           xcodebuild \
-            -project AridmansHappyPlace.xcodeproj \
-            -scheme AridmansHappyPlace \
-            -showBuildSettings >/dev/null
+            -project "AridmansHappyPlace.xcodeproj" \
+            -list
+
+          echo ""
+          echo "=== Build settings ==="
+
+          xcodebuild \
+            -project "AridmansHappyPlace.xcodeproj" \
+            -scheme "AridmansHappyPlace" \
+            -showBuildSettings
+
 
       - name: Build unsigned archive
         script: |
           set -euo pipefail
-          rm -rf "$CM_BUILD_DIR/build"
-          mkdir -p "$CM_BUILD_DIR/build"
+
+          echo "=== Preparing build directory ==="
+
+          BUILD_DIR="$CM_BUILD_DIR/build"
+          ARCHIVE="$BUILD_DIR/AridmansHappyPlace.xcarchive"
+
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR"
+
+          echo ""
+          echo "=== Building unsigned iOS archive ==="
 
           xcodebuild archive \
-            -project AridmansHappyPlace.xcodeproj \
-            -scheme AridmansHappyPlace \
+            -project "AridmansHappyPlace.xcodeproj" \
+            -scheme "AridmansHappyPlace" \
             -configuration Release \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
-            -archivePath "$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive" \
+            -archivePath "$ARCHIVE" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -60,23 +172,73 @@ workflows:
             DEVELOPMENT_TEAM="" \
             YOUTUBE_API_KEY="$YOUTUBE_API_KEY"
 
+          echo ""
+          echo "=== Checking archive ==="
+
+          test -d "$ARCHIVE"
+
+          echo "Archive successfully created:"
+          echo "$ARCHIVE"
+
+
       - name: Package unsigned IPA
         script: |
           set -euo pipefail
-          ARCHIVE="$CM_BUILD_DIR/build/AridmansHappyPlace.xcarchive"
+
+          echo "=== Packaging IPA ==="
+
+          BUILD_DIR="$CM_BUILD_DIR/build"
+          ARCHIVE="$BUILD_DIR/AridmansHappyPlace.xcarchive"
           APP="$ARCHIVE/Products/Applications/AridmansHappyPlace.app"
-          BUILD="$CM_BUILD_DIR/build"
+          IPA="$BUILD_DIR/AridmansHappyPlace-unsigned.ipa"
 
-          test -d "$APP"
-          rm -rf "$BUILD/Payload"
-          mkdir -p "$BUILD/Payload"
-          cp -R "$APP" "$BUILD/Payload/"
+          echo ""
+          echo "Checking built application..."
 
-          cd "$BUILD"
+          test -d "$APP" || {
+            echo "ERROR: AridmansHappyPlace.app was not found."
+            echo ""
+            echo "Archive contents:"
+            find "$ARCHIVE" -maxdepth 5 -type d | head -100
+            exit 1
+          }
+
+          echo "Application found."
+
+          echo ""
+          echo "Creating Payload directory..."
+
+          rm -rf "$BUILD_DIR/Payload"
+          mkdir -p "$BUILD_DIR/Payload"
+
+          cp -R "$APP" "$BUILD_DIR/Payload/"
+
+          echo ""
+          echo "Creating unsigned IPA..."
+
+          cd "$BUILD_DIR"
+
           rm -f "AridmansHappyPlace-unsigned.ipa"
-          /usr/bin/zip -qr "AridmansHappyPlace-unsigned.ipa" Payload
-          test -f "AridmansHappyPlace-unsigned.ipa"
-          unzip -l "AridmansHappyPlace-unsigned.ipa" | head -40
+
+          /usr/bin/zip \
+            -qr \
+            "AridmansHappyPlace-unsigned.ipa" \
+            Payload
+
+          test -f "$IPA"
+
+          echo ""
+          echo "======================================"
+          echo " UNSIGNED IPA CREATED"
+          echo "======================================"
+
+          ls -lh "$IPA"
+
+          echo ""
+          echo "=== IPA contents ==="
+
+          unzip -l "$IPA" | head -60
+
 
     artifacts:
       - build/AridmansHappyPlace-unsigned.ipa

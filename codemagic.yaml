@@ -8,182 +8,58 @@ workflows:
         - youtube
 
     scripts:
-
       - name: Validate project
         script: |
           set -euo pipefail
-
-          echo "======================================"
-          echo " ARIDMAN'S HAPPY PLACE"
-          echo " Project validation"
-          echo "======================================"
-
-          echo ""
-          echo "=== Current directory ==="
-          pwd
-
-          echo ""
-          echo "=== Repository contents ==="
-          ls -la
-
-          echo ""
-          echo "=== Checking Xcode project ==="
-
-          test -d "AridmansHappyPlace.xcodeproj" || {
-            echo "ERROR: AridmansHappyPlace.xcodeproj is missing."
-            exit 1
-          }
-
-          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj" || {
-            echo "ERROR: project.pbxproj is missing."
-            exit 1
-          }
-
-          test -f "AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme" || {
-            echo "ERROR: AridmansHappyPlace.xcscheme is missing."
-            exit 1
-          }
-
-          echo "Xcode project structure: OK"
-
-          echo ""
-          echo "=== Checking Swift source ==="
-
-          test -f "AridmansHappyPlaceApp.swift" || {
-            echo "ERROR: AridmansHappyPlaceApp.swift is missing."
-            exit 1
-          }
-
-          test -f "CategoriesView.swift" || {
-            echo "ERROR: CategoriesView.swift is missing."
-            exit 1
-          }
-
-          test -f "CategoryTile.swift" || {
-            echo "ERROR: CategoryTile.swift is missing."
-            exit 1
-          }
-
-          test -f "VideoCatalog.swift" || {
-            echo "ERROR: VideoCatalog.swift is missing."
-            exit 1
-          }
-
-          test -f "VideoListView.swift" || {
-            echo "ERROR: VideoListView.swift is missing."
-            exit 1
-          }
-
-          echo "Swift source files: OK"
-
-          echo ""
-          echo "=== Checking Info.plist ==="
-
-          test -f "Info.plist" || {
-            echo "ERROR: Info.plist is missing."
-            exit 1
-          }
-
-          echo "Info.plist: OK"
-
-          echo ""
-          echo "=== Checking YouTube API key ==="
+          test -d "AridmansHappyPlace.xcodeproj"
+          test -f "AridmansHappyPlace.xcodeproj/project.pbxproj"
+          test -f "AridmansHappyPlace.xcodeproj/xcshareddata/xcschemes/AridmansHappyPlace.xcscheme"
+          test -f "AridmansHappyPlaceApp.swift"
+          test -f "CategoriesView.swift"
+          test -f "CategoryTile.swift"
+          test -f "VideoCatalog.swift"
+          test -f "VideoListView.swift"
+          test -f "Info.plist"
+          test -d "Aridmanv2/Assets.xcassets"
+          test -d "Aridmanv2/Assets.xcassets/AppIcon.appiconset"
+          test -f "Aridmanv2/Assets.xcassets/AppIcon.appiconset/Contents.json"
+          test -f "Aridmanv2/Assets.xcassets/AppIcon.appiconset/app icon.png"
 
           if [ -z "${YOUTUBE_API_KEY:-}" ]; then
             echo "ERROR: YOUTUBE_API_KEY is missing."
-            echo "Make sure the 'youtube' environment variable group is enabled."
             exit 1
           fi
 
-          echo "YOUTUBE_API_KEY is present."
-
-          echo ""
-          echo "=== Validating Swift files ==="
-
           python3 - <<'PY'
           from pathlib import Path
-
-          files = [
+          for path in [
               Path("AridmansHappyPlaceApp.swift"),
               Path("CategoriesView.swift"),
               Path("CategoryTile.swift"),
               Path("VideoCatalog.swift"),
               Path("VideoListView.swift"),
-          ]
-
-          for path in files:
-              print(f"Checking {path}...")
-
+          ]:
               data = path.read_bytes()
-
-              # Make sure the source is valid UTF-8.
               data.decode("utf-8")
-
-              # Detect binary/control characters.
-              for byte in data:
-                  if byte == 0 or (
-                      byte < 32 and
-                      byte not in (9, 10, 13)
-                  ):
-                      raise SystemExit(
-                          f"ERROR: Invalid control/binary byte in {path}"
-                      )
-
-              print(f"OK: {path}")
-
-          print("All Swift files are valid UTF-8 text.")
+              if any(b == 0 or (b < 32 and b not in (9, 10, 13)) for b in data):
+                  raise SystemExit(f"ERROR: Invalid control/binary byte in {path}")
+          print("Project validation passed.")
           PY
-
-          echo ""
-          echo "======================================"
-          echo " PROJECT VALIDATION PASSED"
-          echo "======================================"
-
 
       - name: Show Xcode project
         script: |
           set -euo pipefail
-
-          echo "======================================"
-          echo " XCODE INFORMATION"
-          echo "======================================"
-
-          echo ""
-          echo "=== Xcode version ==="
           xcodebuild -version
-
-          echo ""
-          echo "=== Available project information ==="
-
-          xcodebuild \
-            -project "AridmansHappyPlace.xcodeproj" \
-            -list
-
-          echo ""
-          echo "=== Build settings ==="
-
-          xcodebuild \
-            -project "AridmansHappyPlace.xcodeproj" \
-            -scheme "AridmansHappyPlace" \
-            -showBuildSettings
-
+          xcodebuild -project "AridmansHappyPlace.xcodeproj" -list
+          xcodebuild -project "AridmansHappyPlace.xcodeproj" -scheme "AridmansHappyPlace" -showBuildSettings
 
       - name: Build unsigned archive
         script: |
           set -euo pipefail
-
-          echo "======================================"
-          echo " BUILDING UNSIGNED ARCHIVE"
-          echo "======================================"
-
           BUILD_DIR="$CM_BUILD_DIR/build"
           ARCHIVE="$BUILD_DIR/AridmansHappyPlace.xcarchive"
-
           rm -rf "$BUILD_DIR"
           mkdir -p "$BUILD_DIR"
-
-          echo ""
-          echo "=== Running xcodebuild archive ==="
 
           xcodebuild archive \
             -project "AridmansHappyPlace.xcodeproj" \
@@ -199,96 +75,44 @@ workflows:
             DEVELOPMENT_TEAM="" \
             YOUTUBE_API_KEY="$YOUTUBE_API_KEY"
 
-          echo ""
-          echo "=== Checking archive ==="
+          test -d "$ARCHIVE/Products/Applications/AridmansHappyPlace.app"
+          echo "Unsigned archive created successfully."
 
-          test -d "$ARCHIVE" || {
-            echo "ERROR: Archive was not created."
-            exit 1
-          }
-
-          echo "Archive successfully created."
-
-          echo ""
-          echo "Archive location:"
-          echo "$ARCHIVE"
-
-
-      - name: Package unsigned IPA
+      - name: Package and validate unsigned IPA
         script: |
           set -euo pipefail
-
-          echo "======================================"
-          echo " PACKAGING UNSIGNED IPA"
-          echo "======================================"
 
           BUILD_DIR="$CM_BUILD_DIR/build"
           ARCHIVE="$BUILD_DIR/AridmansHappyPlace.xcarchive"
           APP="$ARCHIVE/Products/Applications/AridmansHappyPlace.app"
           IPA="$BUILD_DIR/AridmansHappyPlace-unsigned.ipa"
 
-          echo ""
-          echo "=== Checking archive ==="
-
-          test -d "$ARCHIVE" || {
-            echo "ERROR: Archive does not exist."
-            exit 1
-          }
-
-          echo ""
-          echo "=== Checking .app ==="
-
-          if [ ! -d "$APP" ]; then
-            echo "ERROR: AridmansHappyPlace.app was not found."
-            echo ""
-            echo "Applications inside archive:"
-            find "$ARCHIVE/Products" -maxdepth 5 -type d -print || true
-            exit 1
-          fi
-
-          echo "Found:"
-          echo "$APP"
-
-          echo ""
-          echo "=== Creating Payload ==="
+          test -d "$APP"
+          test -f "$APP/Info.plist"
+          test -f "$APP/AridmansHappyPlace"
 
           rm -rf "$BUILD_DIR/Payload"
           mkdir -p "$BUILD_DIR/Payload"
+          cp -R "$APP" "$BUILD_DIR/Payload/AridmansHappyPlace.app"
 
-          cp -R "$APP" "$BUILD_DIR/Payload/"
+          /usr/bin/plutil -lint "$BUILD_DIR/Payload/AridmansHappyPlace.app/Info.plist"
 
-          echo ""
-          echo "=== Creating IPA ==="
-
+          rm -f "$IPA"
           cd "$BUILD_DIR"
+          /usr/bin/ditto -c -k --keepParent Payload "$IPA"
 
-          rm -f "AridmansHappyPlace-unsigned.ipa"
+          test -f "$IPA"
+          /usr/bin/unzip -t "$IPA"
 
-          /usr/bin/zip \
-            -qr \
-            "AridmansHappyPlace-unsigned.ipa" \
-            "Payload"
+          echo "=== IPA structure ==="
+          /usr/bin/unzip -l "$IPA"
 
-          echo ""
-          echo "=== Verifying IPA ==="
+          echo "=== Required paths ==="
+          /usr/bin/unzip -l "$IPA" | grep -F "Payload/AridmansHappyPlace.app/Info.plist"
+          /usr/bin/unzip -l "$IPA" | grep -F "Payload/AridmansHappyPlace.app/AridmansHappyPlace"
 
-          test -f "$IPA" || {
-            echo "ERROR: IPA was not created."
-            exit 1
-          }
-
-          echo ""
-          echo "======================================"
-          echo " UNSIGNED IPA CREATED SUCCESSFULLY"
-          echo "======================================"
-
-          ls -lh "$IPA"
-
-          echo ""
-          echo "=== IPA contents ==="
-
-          unzip -l "$IPA" | head -60
-
+          echo "IPA packaging validation passed."
+          echo "NOTE: This IPA is intentionally unsigned and must be signed with your certificate/profile before iOS installation."
 
     artifacts:
       - build/AridmansHappyPlace-unsigned.ipa

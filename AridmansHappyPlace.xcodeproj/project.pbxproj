@@ -23,7 +23,7 @@
  A20000000000000000000005 /* VideoListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoListView.swift; sourceTree = "<group>"; };
  A20000000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
  A20000000000000000000007 /* AridmansHappyPlace.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AridmansHappyPlace.app; sourceTree = BUILT_PRODUCTS_DIR; };
- A20000000000000000000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+ A20000000000000000000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Aridmanv2/Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -185,6 +185,7 @@
    SUPPORTS_MACCATALYST = NO;
    GENERATE_INFOPLIST_FILE = NO;
    CODE_SIGN_STYLE = Manual;
+   ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
   };
   name = Debug;
  };
@@ -202,6 +203,7 @@
    SUPPORTS_MACCATALYST = NO;
    GENERATE_INFOPLIST_FILE = NO;
    CODE_SIGN_STYLE = Manual;
+   ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
   };
   name = Release;
  };

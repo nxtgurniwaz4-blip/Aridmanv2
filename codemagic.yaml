@@ -112,7 +112,7 @@ workflows:
           /usr/bin/unzip -l "$IPA" | grep -F "Payload/AridmansHappyPlace.app/AridmansHappyPlace"
 
           echo "IPA packaging validation passed."
-          echo "NOTE: This IPA is intentionally unsigned and must be signed with your certificate/profile before iOS installation."
+          echo "PHOS KHALO THAND PAA PHOS KHAA"
 
     artifacts:
       - build/AridmansHappyPlace-unsigned.ipa

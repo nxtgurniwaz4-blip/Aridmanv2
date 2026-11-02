@@ -110,8 +110,8 @@ struct YouTubeVideo: Identifiable, Hashable {
     let channelTitle: String
     let thumbnailURL: URL?
 
-    var url: URL {
-        URL(string: "https://www.youtube.com/watch?v=\(id)")!
+    var url: URL? {
+        URL(string: "https://www.youtube.com/watch?v=\(id)")
     }
 }
 
@@ -128,7 +128,7 @@ actor YouTubeService {
 
     func search(category: LearningCategory) async throws -> [YouTubeVideo] {
         guard !apiKey.isEmpty else {
-            throw YouTubeError.missingAPIKey
+            return []
         }
 
         var components = URLComponents(
@@ -179,14 +179,15 @@ actor YouTubeService {
         return decoded.items.compactMap { item in
             guard let videoID = item.id.videoID else { return nil }
 
+            let thumbnailString = item.snippet.thumbnails?.medium?.url
+            ?? item.snippet.thumbnails?.high?.url
+            ?? item.snippet.thumbnails?.defaultThumbnail?.url
+
             return YouTubeVideo(
                 id: videoID,
                 title: item.snippet.title,
                 channelTitle: item.snippet.channelTitle,
-                thumbnailURL: URL(string: item.snippet.thumbnails?.medium?.url
-                    ?? item.snippet.thumbnails?.high?.url
-                    ?? item.snippet.thumbnails?.defaultThumbnail?.url
-                    ?? "")
+                thumbnailURL: thumbnailString.flatMap { URL(string: $0) }
             )
         }
     }

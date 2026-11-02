@@ -1,0 +1,36 @@
+name: AridmansHappyPlace
+options:
+  bundleId: com.aridman.happyplace
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  SWIFT_VERSION: 5.9
+  TARGETED_DEVICE_FAMILY: "1,2"
+
+targets:
+  AridmansHappyPlace:
+    type: application
+    platform: iOS
+    sources:
+      - .
+    resources:
+      - path: Aridmanv2/Assets.xcassets
+        optional: false
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Aridman's Happy Place
+        CFBundleName: AridmansHappyPlace
+        CFBundleIdentifier: com.aridman.happyplace
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        YOUTUBE_API_KEY: $(YOUTUBE_API_KEY)
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight

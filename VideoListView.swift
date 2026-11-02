@@ -27,7 +27,39 @@ struct VideoListView: View {
                 )
             } else {
                 List(videos) { video in
-                    Link(destination: video.url) {
+                    if let destination = video.url {
+                        Link(destination: destination) {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: video.thumbnailURL) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image.resizable().scaledToFill()
+                                    default:
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(.quaternary)
+                                            .overlay {
+                                                Image(systemName: "play.fill")
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                    }
+                                }
+                                .frame(width: 120, height: 68)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(video.title)
+                                        .font(.headline)
+                                        .lineLimit(3)
+
+                                    Text(video.channelTitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(.vertical, 5)
+                        }
+                    } else {
                         HStack(spacing: 12) {
                             AsyncImage(url: video.thumbnailURL) { phase in
                                 switch phase {

@@ -68,7 +68,7 @@ workflows:
           ARCHIVE="$BUILD_DIR/AridmansHappyPlace.xcarchive"
           rm -rf "$BUILD_DIR"
           mkdir -p "$BUILD_DIR"
-
+          YOUTUBE_API_KEY="$YOUTUBE_API_KEY"
           xcodebuild archive \
             -project "AridmansHappyPlace.xcodeproj" \
             -scheme "AridmansHappyPlace" \

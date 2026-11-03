@@ -190,7 +190,8 @@ struct YouTubePlayer: UIViewRepresentable {
         let html = """
         <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>html,body{margin:0;background:transparent}iframe{width:100%;height:100vh;border:0}</style></head>
-        <body><iframe src="https://www.youtube.com/embed/\(videoID)?playsinline=1&rel=0&modestbranding=1"
+        <body><iframe src="https://www.youtube.com/embed/\(videoID)?playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=https://www.youtube.com"
+        referrerpolicy="strict-origin-when-cross-origin"
         allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></body></html>
         """
         web.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
@@ -208,9 +209,17 @@ struct RemoteVideoView: View {
     var body: some View {
         Group {
             if let id = videoID {
-                YouTubePlayer(videoID: id)
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                VStack(spacing: 10) {
+                    YouTubePlayer(videoID: id)
+                        .aspectRatio(16 / 9, contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                    if let url = URL(string: "https://www.youtube.com/watch?v=\(id)") {
+                        Link(destination: url) {
+                            Label("Open in YouTube", systemImage: "arrow.up.right.square")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        }
+                    }
+                }
             } else if let message = message {
                 Text(message)
                     .font(.footnote)

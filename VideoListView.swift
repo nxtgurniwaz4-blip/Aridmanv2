@@ -8,7 +8,7 @@ struct VideoListView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     
-    // 1. Tracks the active video item to cleanly load it into our inline frame overlay
+    // 1. Tracks the active video item to display the inline player popup sheet
     @State private var playingVideo: YouTubeVideo? = nil
 
     var body: some View {
@@ -31,7 +31,7 @@ struct VideoListView: View {
                 )
             } else {
                 List(videos) { video in
-                    // 2. Transformed the system Link layer into an internal UI Button action
+                    // 2. Interactive Button to present the immersive video overlay instead of opening external apps
                     Button(action: {
                         self.playingVideo = video
                     }) {
@@ -56,7 +56,7 @@ struct VideoListView: View {
                                 Text(video.title)
                                     .font(.headline)
                                     .lineLimit(3)
-                                    .foregroundColor(.primary) // Assures normal text color layout inside Button
+                                    .foregroundColor(.primary)
 
                                 Text(video.channelTitle)
                                     .font(.caption)
@@ -66,7 +66,7 @@ struct VideoListView: View {
                         }
                         .padding(.vertical, 5)
                     }
-                    .buttonStyle(PlainButtonStyle()) // Ensures your custom list rows look perfectly normal
+                    .buttonStyle(PlainButtonStyle()) // Preserves standard row click appearance
                 }
                 .listStyle(.plain)
             }
@@ -75,7 +75,7 @@ struct VideoListView: View {
         .task(id: category) {
             await loadVideos()
         }
-        // 3. Captures the item tap to present the clean native web player container sheet
+        // 3. Spans a clean presentation screen for the video player container
         .sheet(item: $playingVideo) { selectedVideo in
             InlineVideoPlayerSheet(video: selectedVideo)
         }
@@ -96,38 +96,25 @@ struct VideoListView: View {
     }
 }
 
-// MARK: - 4. Inline Structural Video Popup Container
+// MARK: - 4. Real-Sized Immersive Video Sheet Container
 struct InlineVideoPlayerSheet: View {
     let video: YouTubeVideo
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 16) {
-                // Safely handles the fallback evaluation of the parsed URL configuration
+            VStack(spacing: 0) {
                 if let targetURL = video.url {
-                    YouTubeInlinePlayerView(videoURL: targetURL)
-                        .aspectRatio(16/9, contentMode: .fit)
-                        .cornerRadius(12)
-                        .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
-                        .padding()
+                    let videoID = extractVideoID(from: targetURL)
+                    
+                    // Fills the maximum layout width and height area cleanly for the iPad screen space
+                    YouTubeInlinePlayerView(videoID: videoID)
+                        .edgesIgnoringSafeArea(.bottom)
                 } else {
                     ContentUnavailableView("Playback Error", systemImage: "video.slash")
                 }
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(video.title)
-                        .font(.title3)
-                        .bold()
-                    
-                    Text(video.channelTitle)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal)
-                
-                Spacer()
             }
+            .navigationTitle(video.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -137,17 +124,32 @@ struct InlineVideoPlayerSheet: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle()) // Enforces clean uniform layout presentation rules
+    }
+    
+    // Safely reads the text ID characters from your video URL feed configuration
+    private func extractVideoID(from url: URL) -> String {
+        let absoluteString = url.absoluteString
+        if absoluteString.contains("watch?v="), let id = absoluteString.components(separatedBy: "v=").last {
+            return id.components(separatedBy: "&").first ?? id
+        } else if absoluteString.contains("youtu.be/") {
+            let id = absoluteString.components(separatedBy: "youtu.be/").last ?? ""
+            return id.components(separatedBy: "?").first ?? id
+        } else if absoluteString.contains("embed/") {
+            let id = absoluteString.components(separatedBy: "embed/").last ?? ""
+            return id.components(separatedBy: "?").first ?? id
+        }
+        return absoluteString
     }
 }
 
-// MARK: - 5. Platform Rendering Engine (Enforces Inline iPad Layout)
+// MARK: - 5. Embedded Rendering Interface (Bypasses Playback Blockages & Expands Frame)
 struct YouTubeInlinePlayerView: UIViewRepresentable {
-    let videoURL: URL
+    let videoID: String
     
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        // iPad critical setting: strictly locks the rendering instance 
-        // to prevent the native player from automatically exploding full-screen
+        // Prevents the system context from throwing the video out into a default Apple full-screen frame player
         configuration.allowsInlineMediaPlayback = true
         
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -157,24 +159,36 @@ struct YouTubeInlinePlayerView: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        // Formats the destination link with embed configuration options safely
-        let originalString = videoURL.absoluteString
-        var finalURL = videoURL
+        // Embed code structure explicitly configuring safe origin referrer properties to clear security blocks
+        let htmlPayload = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <style>
+                html, body {
+                    margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden;
+                }
+                .video-container {
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                }
+            </style>
+        </head>
+        <body>
+            <iframe class="video-container" 
+                    src="https://youtube.com\(videoID)?playsinline=1&modestbranding=1&rel=0&autoplay=1" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    referrerpolicy="strict-origin-when-cross-origin" 
+                    allowfullscreen>
+            </iframe>
+        </body>
+        </html>
+        """
         
-        // Converts standard watch URLs to standard background embed strings dynamically
-        if originalString.contains("watch?v="), let videoID = originalString.components(separatedBy: "v=").last {
-            let cleanID = videoID.components(separatedBy: "&").first ?? videoID
-            if let embedURL = URL(string: "https://www.youtube.com/embed/\(cleanID)?playsinline=1&modestbranding=1&rel=0") {
-                finalURL = embedURL
-            }
-        } else if originalString.contains("youtu.be/") {
-            let videoID = originalString.components(separatedBy: "youtu.be/").last ?? ""
-            let cleanID = videoID.components(separatedBy: "?").first ?? videoID
-            if let embedURL = URL(string: "https://www.youtube.com/embed/\(cleanID)?playsinline=1&modestbranding=1&rel=0") {
-                finalURL = embedURL
-            }
+        // Providing an official base URL context allows the player component to securely render the video feed streams
+        if let primaryBaseURL = URL(string: "https://youtube.com") {
+            uiView.loadHTMLString(htmlPayload, baseURL: primaryBaseURL)
         }
-        
-        uiView.load(URLRequest(url: finalURL))
     }
 }

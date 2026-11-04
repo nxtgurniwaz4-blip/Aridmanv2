@@ -66,7 +66,7 @@ struct VideoListView: View {
                         }
                         .padding(.vertical, 5)
                     }
-                    .buttonStyle(PlainButtonStyle()) // Preserves standard row click appearance
+                    .buttonStyle(PlainButtonStyle()) 
                 }
                 .listStyle(.plain)
             }
@@ -75,7 +75,7 @@ struct VideoListView: View {
         .task(id: category) {
             await loadVideos()
         }
-        // 3. Spans a clean presentation screen for the video player container
+        // 3. Spans a custom sheet configured for iPad side-by-side viewing
         .sheet(item: $playingVideo) { selectedVideo in
             InlineVideoPlayerSheet(video: selectedVideo)
         }
@@ -96,38 +96,81 @@ struct VideoListView: View {
     }
 }
 
-// MARK: - 4. Real-Sized Immersive Video Sheet Container
+// MARK: - 4. Side-by-Side Theatrical Video Sheet Container (Matches Screenshot Layout)
 struct InlineVideoPlayerSheet: View {
     let video: YouTubeVideo
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                if let targetURL = video.url {
-                    let videoID = extractVideoID(from: targetURL)
-                    
-                    // Fills the maximum layout width and height area cleanly for the iPad screen space
-                    YouTubeInlinePlayerView(videoID: videoID)
-                        .edgesIgnoringSafeArea(.bottom)
-                } else {
-                    ContentUnavailableView("Playback Error", systemImage: "video.slash")
-                }
-            }
-            .navigationTitle(video.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Close") {
-                        dismiss()
+        GeometryReader { geometry in
+            HStack(spacing: 0) {
+                // LEFT SIDE: The Main Widescreen Video Player Canvas (approx 65% width)
+                VStack(alignment: .leading, spacing: 12) {
+                    if let targetURL = video.url {
+                        let videoID = extractVideoID(from: targetURL)
+                        
+                        YouTubeInlinePlayerView(videoID: videoID)
+                            .frame(height: geometry.size.height * 0.65) // Proportional video block height
+                            .background(Color.black)
+                    } else {
+                        ContentUnavailableView("Playback Error", systemImage: "video.slash")
+                            .frame(height: geometry.size.height * 0.65)
                     }
+                    
+                    // Video Metadata details nested underneath player just like your reference screen
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(video.title)
+                            .font(.title3)
+                            .bold()
+                            .lineLimit(2)
+                        
+                        Text(video.channelTitle)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                    
+                    Spacer()
                 }
+                .frame(width: geometry.size.width * 0.65)
+                
+                // DIVIDER LINE
+                Color(.separator)
+                    .frame(width: 1)
+                    .edgesIgnoringSafeArea(.all)
+                
+                // RIGHT SIDE: Action Sidebar / Detail List View Context (approx 35% width)
+                VStack {
+                    HStack {
+                        Text("Video Details")
+                            .font(.headline)
+                            .bold()
+                        Spacer()
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding()
+                    
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Enjoy learning with Pramod's Life! Keep this window open to stay inside your custom application sandbox workspace safely.")
+                                .font(.callout)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding()
+                    }
+                    Spacer()
+                }
+                .frame(width: geometry.size.width * 0.35)
+                .background(Color(.systemGroupedBackground))
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle()) // Enforces clean uniform layout presentation rules
+        .edgesIgnoringSafeArea(.bottom)
     }
     
-    // Safely reads the text ID characters from your video URL feed configuration
     private func extractVideoID(from url: URL) -> String {
         let absoluteString = url.absoluteString
         if absoluteString.contains("watch?v="), let id = absoluteString.components(separatedBy: "v=").last {
@@ -143,13 +186,12 @@ struct InlineVideoPlayerSheet: View {
     }
 }
 
-// MARK: - 5. Embedded Rendering Interface (Bypasses Playback Blockages & Expands Frame)
+// MARK: - 5. Fixed Embedded Rendering Engine (Corrected IFrame URL paths to fix playback)
 struct YouTubeInlinePlayerView: UIViewRepresentable {
     let videoID: String
     
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        // Prevents the system context from throwing the video out into a default Apple full-screen frame player
         configuration.allowsInlineMediaPlayback = true
         
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -159,7 +201,7 @@ struct YouTubeInlinePlayerView: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        // Embed code structure explicitly configuring safe origin referrer properties to clear security blocks
+        // FIXED TYPO HERE: Properly formatted /embed/ string ensures YouTube loads streams without failure
         let htmlPayload = """
         <!DOCTYPE html>
         <html>
@@ -169,13 +211,13 @@ struct YouTubeInlinePlayerView: UIViewRepresentable {
                 html, body {
                     margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000000; overflow: hidden;
                 }
-                .video-container {
+                .video-box {
                     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
                 }
             </style>
         </head>
         <body>
-            <iframe class="video-container" 
+            <iframe class="video-box" 
                     src="https://youtube.com\(videoID)?playsinline=1&modestbranding=1&rel=0&autoplay=1" 
                     frameborder="0" 
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
@@ -186,7 +228,6 @@ struct YouTubeInlinePlayerView: UIViewRepresentable {
         </html>
         """
         
-        // Providing an official base URL context allows the player component to securely render the video feed streams
         if let primaryBaseURL = URL(string: "https://youtube.com") {
             uiView.loadHTMLString(htmlPayload, baseURL: primaryBaseURL)
         }

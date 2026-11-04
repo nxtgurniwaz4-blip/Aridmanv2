@@ -28,6 +28,33 @@ final class LearnSpeaker {
         utterance.pitchMultiplier = 1.2
         synth.speak(utterance)
     }
+
+    // How each letter's name sounds, so "A is for Apple" says "ay", not the word "a".
+    private static let letterIPA: [String: String] = [
+        "A": "eɪ", "B": "biː", "C": "siː", "D": "diː", "E": "iː", "F": "ɛf", "G": "dʒiː",
+        "H": "eɪtʃ", "I": "aɪ", "J": "dʒeɪ", "K": "keɪ", "L": "ɛl", "M": "ɛm", "N": "ɛn",
+        "O": "oʊ", "P": "piː", "Q": "kjuː", "R": "ɑːr", "S": "ɛs", "T": "tiː", "U": "juː",
+        "V": "viː", "W": "ˈdʌbəljuː", "X": "ɛks", "Y": "waɪ", "Z": "ziː"
+    ]
+
+    /// Says a letter by its name, then optional trailing words, e.g. "C" + " is for Cat".
+    func sayLetter(_ letter: String, trailing: String = "", interrupt: Bool = true) {
+        if interrupt { synth.stopSpeaking(at: .immediate) }
+        let text = NSMutableAttributedString(string: letter)
+        if let ipa = Self.letterIPA[letter] {
+            text.addAttribute(
+                NSAttributedString.Key(rawValue: AVSpeechSynthesisIPANotationAttribute),
+                value: ipa,
+                range: NSRange(location: 0, length: (letter as NSString).length)
+            )
+        }
+        text.append(NSAttributedString(string: trailing))
+        let utterance = AVSpeechUtterance(attributedString: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.rate = 0.4
+        utterance.pitchMultiplier = 1.2
+        synth.speak(utterance)
+    }
 }
 
 // MARK: - YouTube Data API
@@ -67,6 +94,18 @@ enum YouTubeAPI {
         return key
     }
 
+    /// Sends a YouTube Data API request and returns the raw response.
+    static func get(_ components: URLComponents) async throws -> Data {
+        guard let url = components.url else { throw Failure.noResults }
+        var request = URLRequest(url: url)
+        request.setValue(Bundle.main.bundleIdentifier, forHTTPHeaderField: "X-Ios-Bundle-Identifier")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            throw Failure.http(http.statusCode)
+        }
+        return data
+    }
+
     /// Finds the first kid-safe, embeddable video for a search phrase.
     /// Results are cached on the device to save daily quota.
     static func firstVideoID(for query: String) async throws -> String {
@@ -74,27 +113,39 @@ enum YouTubeAPI {
         if let cached = UserDefaults.standard.string(forKey: cacheKey) { return cached }
         guard let key = apiKey else { throw Failure.missingKey }
 
-        var components = URLComponents(string: "https://www.googleapis.com/youtube/v3/search")!
-        components.queryItems = [
-            URLQueryItem(name: "part", value: "snippet"),
-            URLQueryItem(name: "type", value: "video"),
-            URLQueryItem(name: "videoEmbeddable", value: "true"),
-            URLQueryItem(name: "safeSearch", value: "strict"),
-            URLQueryItem(name: "maxResults", value: "1"),
-            URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "key", value: key)
+        // Strictest kid-safe search first, then loosen if nothing comes back.
+        let attempts: [(embeddable: Bool, safe: String)] = [
+            (true, "strict"), (false, "strict"), (false, "moderate")
         ]
-        var request = URLRequest(url: components.url!)
-        request.setValue(Bundle.main.bundleIdentifier, forHTTPHeaderField: "X-Ios-Bundle-Identifier")
+        for attempt in attempts {
+            var components = URLComponents(string: "https://www.googleapis.com/youtube/v3/search")!
+            var queryItems = [
+                URLQueryItem(name: "part", value: "snippet"),
+                URLQueryItem(name: "type", value: "video"),
+                URLQueryItem(name: "safeSearch", value: attempt.safe),
+                URLQueryItem(name: "maxResults", value: "5"),
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "key", value: key)
+            ]
+            if attempt.embeddable {
+                queryItems.append(URLQueryItem(name: "videoEmbeddable", value: "true"))
+            }
+            components.queryItems = queryItems
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw Failure.http(http.statusCode)
+            var request = URLRequest(url: components.url!)
+            request.setValue(Bundle.main.bundleIdentifier, forHTTPHeaderField: "X-Ios-Bundle-Identifier")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                throw Failure.http(http.statusCode)
+            }
+            let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
+            if let id = decoded.items.compactMap({ $0.id.videoId }).first {
+                UserDefaults.standard.set(id, forKey: cacheKey)
+                return id
+            }
         }
-        let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
-        guard let id = decoded.items.first?.id.videoId else { throw Failure.noResults }
-        UserDefaults.standard.set(id, forKey: cacheKey)
-        return id
+        throw Failure.noResults
     }
 }
 
@@ -334,6 +385,252 @@ struct BundledVideo: View {
     }
 }
 
+// MARK: - Vehicles (videos from the Pramod's Life channel, used with the owner's permission)
+//
+// Searches only inside the @pramodslife channel. Titles containing any word in
+// blockedWords are hidden, because that channel also posts accident and rescue
+// videos that are not suitable for toddlers. Add words to the list if you spot
+// anything unsuitable.
+
+struct VehicleVideo: Identifiable, Codable, Hashable {
+    let id: String
+    let title: String
+    let thumbnail: String
+}
+
+enum PramodsLife {
+    static let handle = "@pramodslife"
+
+    static let blockedWords: Set<String> = [
+        "accident", "accidents", "crash", "crashed", "rescue", "rescued", "fire", "burnt",
+        "burning", "dead", "death", "died", "injured", "blood", "fight", "overturned",
+        "drown", "drowned", "collision", "jumped", "broken", "tipped", "fell", "fall",
+        "falls", "flood", "flooded", "river", "stuck", "pulling", "pulled", "hydra"
+    ]
+
+    private struct ChannelsResponse: Decodable {
+        struct Item: Decodable { let id: String }
+        let items: [Item]?
+    }
+
+    private struct SearchResponse: Decodable {
+        struct Item: Decodable {
+            struct ID: Decodable { let videoId: String? }
+            struct Snippet: Decodable {
+                struct Thumb: Decodable { let url: String }
+                struct Thumbs: Decodable {
+                    let high: Thumb?
+                    let medium: Thumb?
+                }
+                let title: String
+                let thumbnails: Thumbs
+            }
+            let id: ID
+            let snippet: Snippet
+        }
+        let items: [Item]
+    }
+
+    private struct Cached: Codable {
+        let date: Date
+        let videos: [VehicleVideo]
+    }
+
+    static func channelID() async throws -> String {
+        let cacheKey = "learn_pramod_channel_id"
+        if let cached = UserDefaults.standard.string(forKey: cacheKey) { return cached }
+        guard let apiKey = YouTubeAPI.apiKey else { throw YouTubeAPI.Failure.missingKey }
+
+        var components = URLComponents(string: "https://www.googleapis.com/youtube/v3/channels")!
+        components.queryItems = [
+            URLQueryItem(name: "part", value: "id"),
+            URLQueryItem(name: "forHandle", value: handle),
+            URLQueryItem(name: "key", value: apiKey)
+        ]
+        let data = try await YouTubeAPI.get(components)
+        let decoded = try JSONDecoder().decode(ChannelsResponse.self, from: data)
+        guard let id = decoded.items?.first?.id else { throw YouTubeAPI.Failure.noResults }
+        UserDefaults.standard.set(id, forKey: cacheKey)
+        return id
+    }
+
+    /// Videos from the channel about a topic ("tractor", "bus", "truck"). Cached for 12 hours.
+    static func videos(for topic: String) async throws -> [VehicleVideo] {
+        let cacheKey = "learn_pramod_videos_" + topic
+        if let saved = UserDefaults.standard.data(forKey: cacheKey),
+           let cached = try? JSONDecoder().decode(Cached.self, from: saved),
+           Date().timeIntervalSince(cached.date) < 12 * 3600 {
+            return cached.videos
+        }
+
+        guard let apiKey = YouTubeAPI.apiKey else { throw YouTubeAPI.Failure.missingKey }
+        let channel = try await channelID()
+
+        var components = URLComponents(string: "https://www.googleapis.com/youtube/v3/search")!
+        components.queryItems = [
+            URLQueryItem(name: "part", value: "snippet"),
+            URLQueryItem(name: "channelId", value: channel),
+            URLQueryItem(name: "type", value: "video"),
+            URLQueryItem(name: "q", value: "\(topic) -accident -crash -rescue"),
+            URLQueryItem(name: "safeSearch", value: "strict"),
+            URLQueryItem(name: "order", value: "relevance"),
+            URLQueryItem(name: "maxResults", value: "25"),
+            URLQueryItem(name: "key", value: apiKey)
+        ]
+        let data = try await YouTubeAPI.get(components)
+        let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
+
+        let videos = decoded.items.compactMap { item -> VehicleVideo? in
+            guard let id = item.id.videoId else { return nil }
+            let title = clean(item.snippet.title)
+            guard !isBlocked(title) else { return nil }
+            guard let thumb = item.snippet.thumbnails.high?.url ?? item.snippet.thumbnails.medium?.url
+            else { return nil }
+            return VehicleVideo(id: id, title: title, thumbnail: thumb)
+        }
+        guard !videos.isEmpty else { throw YouTubeAPI.Failure.noResults }
+
+        if let encoded = try? JSONEncoder().encode(Cached(date: Date(), videos: videos)) {
+            UserDefaults.standard.set(encoded, forKey: cacheKey)
+        }
+        return videos
+    }
+
+    private static func isBlocked(_ title: String) -> Bool {
+        let words = Set(title.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init))
+        return !words.isDisjoint(with: blockedWords)
+    }
+
+    private static func clean(_ title: String) -> String {
+        title
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+    }
+}
+
+struct VehiclesView: View {
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                NavigationLink(destination: VehicleVideoListView(title: "Tractors", topic: "tractor")) {
+                    LearnHubCard(symbol: "tractor.fill", title: "Tractors", color: .green)
+                }
+                NavigationLink(destination: VehicleVideoListView(title: "Buses", topic: "bus")) {
+                    LearnHubCard(symbol: "bus.fill", title: "Buses", color: .yellow)
+                }
+                NavigationLink(destination: VehicleVideoListView(title: "Trucks", topic: "truck")) {
+                    LearnHubCard(symbol: "box.truck.fill", title: "Trucks", color: .blue)
+                }
+                Text("Videos by Pramod's Life, used with permission.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding()
+        }
+        .navigationTitle("Vehicles")
+    }
+}
+
+struct VehicleVideoListView: View {
+    let title: String
+    let topic: String
+
+    @State private var videos: [VehicleVideo] = []
+    @State private var message: String?
+
+    private let columns = [GridItem(.adaptive(minimum: 260), spacing: 16)]
+
+    var body: some View {
+        ScrollView {
+            if !videos.isEmpty {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(videos) { video in
+                        NavigationLink(destination: VehiclePlayerView(video: video)) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Color.gray.opacity(0.15)
+                                    .aspectRatio(16 / 9, contentMode: .fit)
+                                    .overlay(
+                                        AsyncImage(url: URL(string: video.thumbnail)) { phase in
+                                            if let image = phase.image {
+                                                image.resizable().scaledToFill()
+                                            } else {
+                                                ProgressView()
+                                            }
+                                        }
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                                Text(video.title)
+                                    .font(.system(.headline, design: .rounded))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding()
+            } else if let message = message {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding()
+            } else {
+                ProgressView().padding(.top, 60)
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+    }
+
+    private func load() async {
+        guard videos.isEmpty else { return }
+        do {
+            videos = try await PramodsLife.videos(for: topic)
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+}
+
+struct VehiclePlayerView: View {
+    let video: VehicleVideo
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                YouTubePlayer(videoID: video.id)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+
+                Text(video.title)
+                    .font(.system(.title3, design: .rounded).bold())
+                    .multilineTextAlignment(.center)
+
+                if let url = URL(string: "https://www.youtube.com/watch?v=\(video.id)") {
+                    Link(destination: url) {
+                        Label("Open in YouTube", systemImage: "arrow.up.right.square")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    }
+                }
+
+                Text("Video by Pramod's Life")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+        }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - Alphabet (ABC with voices)
 //
 // Each letter shows a photo of its word. Add photos named like the others:
@@ -435,7 +732,7 @@ struct AlphabetView: View {
             for entry in Alphabet.all {
                 if Task.isCancelled { break }
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) { highlighted = entry.letter }
-                LearnSpeaker.shared.say(entry.spoken, interrupt: false)
+                LearnSpeaker.shared.sayLetter(entry.letter, interrupt: false)
                 try? await Task.sleep(nanoseconds: 900_000_000)
             }
             highlighted = nil
@@ -478,7 +775,7 @@ struct LetterDetailView: View {
     }
 
     private func speak() {
-        LearnSpeaker.shared.say(entry.sentence)
+        LearnSpeaker.shared.sayLetter(entry.letter, trailing: " is for \(entry.word)")
     }
 }
 
@@ -499,6 +796,9 @@ struct LearnHubView: View {
                 }
                 NavigationLink(destination: NameListView(title: "Vegetables", items: LearnData.vegetables, color: .green)) {
                     LearnHubCard(symbol: "leaf.fill", title: "Vegetables", color: .green)
+                }
+                NavigationLink(destination: VehiclesView()) {
+                    LearnHubCard(symbol: "bus.fill", title: "Vehicles", color: .blue)
                 }
             }
             .buttonStyle(.plain)
@@ -705,7 +1005,7 @@ struct ItemDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 20))
                 .padding(.horizontal)
         } else {
-            RemoteVideoView(query: "\(item.name) name for kids learn", knownID: item.youtubeID)
+            RemoteVideoView(query: "learn \(item.name) for toddlers", knownID: item.youtubeID)
         }
     }
 }

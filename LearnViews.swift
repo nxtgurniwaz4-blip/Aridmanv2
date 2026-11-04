@@ -100,10 +100,8 @@ enum YouTubeAPI {
 
 // MARK: - Data
 //
-// PHOTOS (easiest): upload .jpg files to the repo's photos/ folder on GitHub, named
-//         in lowercase with underscores: apple.jpg, sweet_potato.jpg, ice_cream.jpg.
-//         The app loads them live, so no rebuild is needed when you add more.
-// PHOTOS (alternative): add an image to Assets.xcassets named "learn_" + lowercase name with
+// PHOTOS (automatic): each item loads a photo from Wikipedia on its own, no setup.
+// PHOTOS (your own, optional): add an image to Assets.xcassets named "learn_" + lowercase name with
 //         underscores, e.g. learn_apple, learn_banana, learn_sweet_potato.
 //         (Or set imageURL to a photo you have the rights to use.)
 // VIDEOS: loaded automatically from YouTube using your API key. To force a
@@ -119,7 +117,15 @@ struct LearnItem: Identifiable {
     var id: String { name }
     var slug: String { name.lowercased().replacingOccurrences(of: " ", with: "_") }
     var assetName: String { "learn_" + slug }
-    var photoFile: String { slug + ".jpg" }
+
+    /// Wikipedia article whose lead photo is used when no photo is bundled.
+    private static let wikiOverrides: [String: String] = [
+        "Orange": "Orange (fruit)", "Grapes": "Grape", "Kiwi": "Kiwifruit",
+        "Corn": "Maize", "Blueberries": "Blueberry", "Bell Pepper": "Bell pepper",
+        "Chili Pepper": "Chili pepper", "Sweet Potato": "Sweet potato",
+        "Ice Cream": "Ice cream", "Yoyo": "Yo-yo", "Juice": "Juice"
+    ]
+    var wikiTitle: String { Self.wikiOverrides[name] ?? name }
 }
 
 enum LearnData {
@@ -143,6 +149,51 @@ enum LearnData {
     ]
 }
 
+// MARK: - Automatic photos from Wikipedia
+//
+// No key needed. Looks up the lead photo of a Wikipedia article and caches the
+// link on the device. Wikipedia photos have free licenses, but many need credit
+// (e.g. CC BY-SA). Fine for personal use; add credits before publishing to the App Store.
+
+enum WikipediaPhoto {
+    private struct Summary: Decodable {
+        struct Img: Decodable {
+            let source: String
+            let width: Int?
+        }
+        let thumbnail: Img?
+        let originalimage: Img?
+    }
+
+    static func url(for title: String) async -> URL? {
+        let cacheKey = "learn_wiki_" + title
+        if let cached = UserDefaults.standard.string(forKey: cacheKey), let url = URL(string: cached) {
+            return url
+        }
+        let underscored = title.replacingOccurrences(of: " ", with: "_")
+        guard let escaped = underscored.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let endpoint = URL(string: "https://en.wikipedia.org/api/rest_v1/page/summary/" + escaped)
+        else { return nil }
+
+        var request = URLRequest(url: endpoint)
+        request.setValue("AridmansHappyPlace/1.0 (iOS app)", forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            let summary = try JSONDecoder().decode(Summary.self, from: data)
+            var source = summary.thumbnail?.source
+            if let original = summary.originalimage, let width = original.width, width <= 1600 {
+                source = original.source
+            }
+            guard let chosen = source, let url = URL(string: chosen) else { return nil }
+            UserDefaults.standard.set(chosen, forKey: cacheKey)
+            return url
+        } catch {
+            return nil
+        }
+    }
+}
+
 // MARK: - Photo + video building blocks
 
 struct LearnPhoto: View {
@@ -154,19 +205,28 @@ struct LearnPhoto: View {
             .aspectRatio(1, contentMode: .fit)
             .overlay(content)
             .clipShape(RoundedRectangle(cornerRadius: corner))
+            .task { await resolve() }
     }
 
-    /// Photos uploaded to the repo's photos/ folder load from here (repo must stay public).
-    static let photoBase = "https://raw.githubusercontent.com/nxtgurniwaz4-blip/Aridmanv2/main/photos/"
+    @State private var resolved: URL?
+    @State private var failed = false
 
-    private var remoteURL: URL? {
-        item.imageURL ?? URL(string: LearnPhoto.photoBase + item.photoFile)
+    private func resolve() async {
+        if let url = item.imageURL {
+            resolved = url
+            return
+        }
+        if let url = await WikipediaPhoto.url(for: item.wikiTitle) {
+            resolved = url
+        } else {
+            failed = true
+        }
     }
 
     @ViewBuilder private var content: some View {
         if UIImage(named: item.assetName) != nil {
             Image(item.assetName).resizable().scaledToFill()
-        } else if let url = remoteURL {
+        } else if let url = resolved {
             AsyncImage(url: url) { phase in
                 if let image = phase.image {
                     image.resizable().scaledToFill()
@@ -176,8 +236,10 @@ struct LearnPhoto: View {
                     ProgressView()
                 }
             }
-        } else {
+        } else if failed {
             placeholder
+        } else {
+            ProgressView()
         }
     }
 
@@ -304,7 +366,7 @@ enum Alphabet {
         AlphabetEntry(letter: "N", spoken: "en", word: "Nest"),
         AlphabetEntry(letter: "O", spoken: "oh", word: "Orange"),
         AlphabetEntry(letter: "P", spoken: "pee", word: "Pineapple"),
-        AlphabetEntry(letter: "Q", spoken: "cue", word: "Queen"),
+        AlphabetEntry(letter: "Q", spoken: "cue", word: "Quail"),
         AlphabetEntry(letter: "R", spoken: "ar", word: "Rabbit"),
         AlphabetEntry(letter: "S", spoken: "es", word: "Strawberry"),
         AlphabetEntry(letter: "T", spoken: "tee", word: "Tomato"),

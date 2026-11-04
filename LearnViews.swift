@@ -541,8 +541,11 @@ struct CountingView: View {
     private let maxNumber = 20
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 5)
 
+    // One fruit repeated, so kids count identical things.
+    private let countingFruits = ["Apple", "Orange", "Strawberry", "Lemon", "Pear"]
+
     private var item: LearnItem {
-        LearnData.fruits[(number - 1) % LearnData.fruits.count]
+        LearnItem(name: countingFruits[(number - 1) % countingFruits.count])
     }
 
     var body: some View {
@@ -561,6 +564,7 @@ struct CountingView: View {
                 }
             }
             .padding(.horizontal)
+            .frame(maxWidth: 600)
 
             Spacer()
 
@@ -587,7 +591,7 @@ struct CountingView: View {
             }
         }
         .padding(.bottom)
-        .navigationTitle("Counting")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { LearnSpeaker.shared.say(LearnSpeaker.numberWords[number]) }
         .sheet(isPresented: $showVideo) {

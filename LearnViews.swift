@@ -100,7 +100,10 @@ enum YouTubeAPI {
 
 // MARK: - Data
 //
-// PHOTOS: add an image to Assets.xcassets named "learn_" + lowercase name with
+// PHOTOS (easiest): upload .jpg files to the repo's photos/ folder on GitHub, named
+//         in lowercase with underscores: apple.jpg, sweet_potato.jpg, ice_cream.jpg.
+//         The app loads them live, so no rebuild is needed when you add more.
+// PHOTOS (alternative): add an image to Assets.xcassets named "learn_" + lowercase name with
 //         underscores, e.g. learn_apple, learn_banana, learn_sweet_potato.
 //         (Or set imageURL to a photo you have the rights to use.)
 // VIDEOS: loaded automatically from YouTube using your API key. To force a
@@ -114,7 +117,9 @@ struct LearnItem: Identifiable {
     var videoFile: String? = nil
 
     var id: String { name }
-    var assetName: String { "learn_" + name.lowercased().replacingOccurrences(of: " ", with: "_") }
+    var slug: String { name.lowercased().replacingOccurrences(of: " ", with: "_") }
+    var assetName: String { "learn_" + slug }
+    var photoFile: String { slug + ".jpg" }
 }
 
 enum LearnData {
@@ -151,15 +156,24 @@ struct LearnPhoto: View {
             .clipShape(RoundedRectangle(cornerRadius: corner))
     }
 
+    /// Photos uploaded to the repo's photos/ folder load from here (repo must stay public).
+    static let photoBase = "https://raw.githubusercontent.com/nxtgurniwaz4-blip/Aridmanv2/main/photos/"
+
+    private var remoteURL: URL? {
+        item.imageURL ?? URL(string: LearnPhoto.photoBase + item.photoFile)
+    }
+
     @ViewBuilder private var content: some View {
         if UIImage(named: item.assetName) != nil {
             Image(item.assetName).resizable().scaledToFill()
-        } else if let url = item.imageURL {
+        } else if let url = remoteURL {
             AsyncImage(url: url) { phase in
                 if let image = phase.image {
                     image.resizable().scaledToFill()
-                } else {
+                } else if phase.error != nil {
                     placeholder
+                } else {
+                    ProgressView()
                 }
             }
         } else {
@@ -258,12 +272,163 @@ struct BundledVideo: View {
     }
 }
 
+// MARK: - Alphabet (ABC with voices)
+//
+// Each letter shows a photo of its word. Add photos named like the others:
+// learn_apple, learn_ball, learn_cat ... (see the PHOTOS note above).
+
+struct AlphabetEntry: Identifiable {
+    let letter: String
+    let spoken: String   // how the voice says the letter's name
+    let word: String
+    var id: String { letter }
+    var item: LearnItem { LearnItem(name: word) }
+    var sentence: String { "\(spoken). \(spoken) is for \(word)." }
+}
+
+enum Alphabet {
+    static let all: [AlphabetEntry] = [
+        AlphabetEntry(letter: "A", spoken: "ay", word: "Apple"),
+        AlphabetEntry(letter: "B", spoken: "bee", word: "Ball"),
+        AlphabetEntry(letter: "C", spoken: "see", word: "Cat"),
+        AlphabetEntry(letter: "D", spoken: "dee", word: "Dog"),
+        AlphabetEntry(letter: "E", spoken: "ee", word: "Elephant"),
+        AlphabetEntry(letter: "F", spoken: "eff", word: "Fish"),
+        AlphabetEntry(letter: "G", spoken: "gee", word: "Grapes"),
+        AlphabetEntry(letter: "H", spoken: "aitch", word: "Horse"),
+        AlphabetEntry(letter: "I", spoken: "eye", word: "Ice Cream"),
+        AlphabetEntry(letter: "J", spoken: "jay", word: "Juice"),
+        AlphabetEntry(letter: "K", spoken: "kay", word: "Kite"),
+        AlphabetEntry(letter: "L", spoken: "el", word: "Lion"),
+        AlphabetEntry(letter: "M", spoken: "em", word: "Mango"),
+        AlphabetEntry(letter: "N", spoken: "en", word: "Nest"),
+        AlphabetEntry(letter: "O", spoken: "oh", word: "Orange"),
+        AlphabetEntry(letter: "P", spoken: "pee", word: "Pineapple"),
+        AlphabetEntry(letter: "Q", spoken: "cue", word: "Queen"),
+        AlphabetEntry(letter: "R", spoken: "ar", word: "Rabbit"),
+        AlphabetEntry(letter: "S", spoken: "es", word: "Strawberry"),
+        AlphabetEntry(letter: "T", spoken: "tee", word: "Tomato"),
+        AlphabetEntry(letter: "U", spoken: "you", word: "Umbrella"),
+        AlphabetEntry(letter: "V", spoken: "vee", word: "Violin"),
+        AlphabetEntry(letter: "W", spoken: "double you", word: "Watermelon"),
+        AlphabetEntry(letter: "X", spoken: "ex", word: "Xylophone"),
+        AlphabetEntry(letter: "Y", spoken: "why", word: "Yoyo"),
+        AlphabetEntry(letter: "Z", spoken: "zee", word: "Zebra")
+    ]
+}
+
+struct AlphabetView: View {
+    @State private var playing = false
+    @State private var highlighted: String?
+    @State private var task: Task<Void, Never>?
+
+    private let columns = [GridItem(.adaptive(minimum: 90), spacing: 12)]
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                Button(action: playAll) {
+                    Label(playing ? "Saying the ABCs..." : "Say the ABCs", systemImage: "play.circle.fill")
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.purple, in: RoundedRectangle(cornerRadius: 20))
+                        .foregroundColor(.white)
+                }
+                .disabled(playing)
+
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(Alphabet.all) { entry in
+                        NavigationLink(destination: LetterDetailView(entry: entry)) {
+                            Text(entry.letter)
+                                .font(.system(size: 44, weight: .heavy, design: .rounded))
+                                .frame(maxWidth: .infinity)
+                                .aspectRatio(1, contentMode: .fit)
+                                .background(
+                                    Color.purple.opacity(highlighted == entry.letter ? 0.6 : 0.15),
+                                    in: RoundedRectangle(cornerRadius: 18)
+                                )
+                                .foregroundColor(.primary)
+                                .scaleEffect(highlighted == entry.letter ? 1.15 : 1)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("ABC")
+        .navigationBarTitleDisplayMode(.inline)
+        .onDisappear {
+            task?.cancel()
+            playing = false
+            highlighted = nil
+        }
+    }
+
+    private func playAll() {
+        guard !playing else { return }
+        playing = true
+        task = Task { @MainActor in
+            for entry in Alphabet.all {
+                if Task.isCancelled { break }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) { highlighted = entry.letter }
+                LearnSpeaker.shared.say(entry.spoken, interrupt: false)
+                try? await Task.sleep(nanoseconds: 900_000_000)
+            }
+            highlighted = nil
+            playing = false
+        }
+    }
+}
+
+struct LetterDetailView: View {
+    let entry: AlphabetEntry
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                Text("\(entry.letter)\(entry.letter.lowercased())")
+                    .font(.system(size: 130, weight: .heavy, design: .rounded))
+                    .foregroundColor(.purple)
+
+                LearnPhoto(item: entry.item, corner: 28)
+                    .frame(maxWidth: 320)
+
+                Text("\(entry.letter) is for \(entry.word)")
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
+
+                Button(action: speak) {
+                    Label("Say it", systemImage: "speaker.wave.2.fill")
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 14)
+                        .background(Color.purple, in: Capsule())
+                        .foregroundColor(.white)
+                }
+            }
+            .padding()
+        }
+        .navigationTitle(entry.letter)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: speak)
+    }
+
+    private func speak() {
+        LearnSpeaker.shared.say(entry.sentence)
+    }
+}
+
 // MARK: - Hub (push this from your categories screen)
 
 struct LearnHubView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
+                NavigationLink(destination: AlphabetView()) {
+                    LearnHubCard(symbol: "textformat.abc", title: "ABC", color: .purple)
+                }
                 NavigationLink(destination: CountingView()) {
                     LearnHubCard(symbol: "number", title: "Counting", color: .orange)
                 }
